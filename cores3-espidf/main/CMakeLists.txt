@@ -1,0 +1,21 @@
+idf_component_register(
+    SRCS
+        "app_main.cpp"
+        "ui/theme_v3.cpp"
+        "ui/expressions.cpp"
+        "ui/wifi_config.cpp"
+        "ui/font_zh_14.c"
+        "ui/screenshot.c"
+        "ui/qrcode.c"
+    INCLUDE_DIRS
+        "."
+        "ui"
+    REQUIRES
+        "lvgl"
+        "m5unified"
+        "driver"
+        "esp_wifi"
+        "esp_event"
+        "esp_netif"
+        "esp_http_server"
+)
