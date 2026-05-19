@@ -80,9 +80,9 @@ lv_obj_t *qrcode_create(lv_obj_t *parent)
 {
     if (qr_screen) return qr_screen;
 
-    bool is_adult = (theme_v3_get_current() == THEME_ADULT);
-    lv_color_t bg = is_adult ? ADULT_BG : CHILD_BG;
-    lv_color_t fg = is_adult ? ADULT_FG : CHILD_FG;
+    bool is_adult = (theme_v3_get_current() == THEME_TECH);
+    lv_color_t bg = is_adult ? TECH_BG : CHILD_BG;
+    lv_color_t fg = is_adult ? TECH_FG : CHILD_FG;
     lv_color_t white = lv_color_hex(0xFFFFFF);
 
     qr_screen = lv_obj_create(parent);

@@ -34,29 +34,33 @@ static lv_color_t lv_buf1[320 * LV_BUFFER_LINES];
 static lv_color_t lv_buf2[320 * LV_BUFFER_LINES];
 
 // ========== BottomBar 按钮定义 (对齐 BottomBar.tsx) ==========
-// 顺序: 主题, 菜单, 随机, 对话, 开心, 眨眼, 调皮, 眩晕, 哭泣
-#define BB_BTN_COUNT 9
+// v5.0: 16 按钮 (核心表情 + 功能)
+#define BB_BTN_COUNT 16
 static const char *bb_labels[] = {
-    "**",     // 主题 (star)
-    "=",      // 菜单 (hamburger)
-    "?",      // 随机 (random)
-    ":D",     // 对话 (talking mouth)
-    "^_^",    // 开心 (happy face)
-    ";)",     // 眨眼 (wink face)
-    ">_<",    // 调皮 (naughty face)
-    "@_@",    // 眩晕 (dizzy face)
-    "T_T",    // 哭泣 (cry face)
+    "Th", "Me", "Rd",  // 主题/菜单/随机
+    "Tk", "Hp", "Wk",  // 对话/开心/眨眼
+    "Nt", "Dz", "Cr",  // 调皮/眩晕/哭泣
+    "Br", "Lk", "Yn",  // 呼吸/张望/哈欠
+    "Cu", "Ex", "An",  // 好奇/兴奋/生气
+    "Ce",              // 庆祝
 };
 static Expression bb_expr[] = {
-    EXPR_IDLE,     // 主题 — 不触发表情
-    EXPR_MENU,     // 菜单
-    EXPR_IDLE,     // 随机 — handler 里随机
-    EXPR_TALKING,  // 对话
-    EXPR_HAPPY,    // 开心
-    EXPR_WINK,     // 眨眼
-    EXPR_NAUGHTY,  // 调皮
-    EXPR_DIZZY,    // 眩晕
-    EXPR_CRYING,   // 哭泣
+    EXPR_IDLE,        // 主题
+    EXPR_MENU,        // 菜单
+    EXPR_IDLE,        // 随机 (handler 里随机)
+    EXPR_TALKING,     // 对话
+    EXPR_HAPPY,       // 开心
+    EXPR_WINK,        // 眨眼
+    EXPR_NAUGHTY,     // 调皮
+    EXPR_DIZZY,       // 眩晕
+    EXPR_CRYING,      // 哭泣
+    EXPR_BREATH,      // 呼吸
+    EXPR_LOOK_AROUND, // 张望
+    EXPR_YAWN,        // 哈欠
+    EXPR_CURIOUS,     // 好奇
+    EXPR_EXCITED,     // 兴奋
+    EXPR_ANGRY,       // 生气
+    EXPR_CELEBRATE,   // 庆祝
 };
 
 // ========== 全局 UI 对象 ==========
@@ -180,23 +184,26 @@ static void _bottom_bar_button_cb(lv_event_t *e)
     ESP_LOGI(TAG, "底部栏按钮点击: %s (idx=%d)", bb_labels[btn_idx], btn_idx);
 
     switch (btn_idx) {
-        case 0: {  // 主题切换 — 对齐 BottomBar.tsx toggleTheme
-            ThemeV3 new_theme = (theme_v3_get_current() == THEME_ADULT) ? THEME_CHILD : THEME_ADULT;
+        case 0: {  // 主题切换 — v5.0: Tech→Child→Dev→Tech
+            ThemeV3 cur = theme_v3_get_current();
+            ThemeV3 new_theme = (cur == THEME_TECH) ? THEME_CHILD
+                             : (cur == THEME_CHILD) ? THEME_DEV : THEME_TECH;
             theme_v3_switch(new_theme);
             expression_refresh_theme();
 
-            bool is_adult = (new_theme == THEME_ADULT);
+            bool is_tech = (new_theme == THEME_TECH);
+            bool is_dev = (new_theme == THEME_DEV);
 
             // BottomBar 容器颜色 — 对齐 BottomBar.tsx
             lv_obj_set_style_bg_color(bottom_bar,
-                is_adult ? lv_color_hex(0x18181B) : lv_color_hex(0xFEF3C7), 0);
+                is_tech ? lv_color_hex(0x18181B) : is_dev ? lv_color_hex(0x0A0A0A) : lv_color_hex(0xFEF3C7), 0);
             lv_obj_set_style_border_color(bottom_bar,
-                is_adult ? lv_color_hex(0x27272A) : lv_color_hex(0xFDE68A), 0);
+                is_tech ? lv_color_hex(0x27272A) : is_dev ? lv_color_hex(0x14532D) : lv_color_hex(0xFDE68A), 0);
 
             // BottomBar 按钮颜色 — 同步更新
             for (int i = 0; i < BB_BTN_COUNT; i++) {
                 lv_obj_t *label = lv_obj_get_child(bb_buttons[i], 0);
-                if (is_adult) {
+                if (is_tech) {
                     if (label) lv_obj_set_style_text_color(label, lv_color_hex(0xE4E4E7), 0);
                     lv_obj_set_style_bg_opa(bb_buttons[i], LV_OPA_TRANSP, 0);
                     lv_obj_set_style_border_width(bb_buttons[i], 0, 0);
@@ -213,17 +220,17 @@ static void _bottom_bar_button_cb(lv_event_t *e)
 
             // StatusBar 颜色 — 对齐 StatusBar.tsx
             lv_obj_set_style_bg_color(status_bar,
-                is_adult ? lv_color_hex(0x18181B) : lv_color_hex(0xFDE68A), 0);
+                is_tech ? lv_color_hex(0x18181B) : is_dev ? lv_color_hex(0x0A0A0A) : lv_color_hex(0xFDE68A), 0);
             lv_obj_set_style_text_color(status_bar,
-                is_adult ? lv_color_hex(0xA1A1AA) : lv_color_hex(0xB45309), 0);
+                is_tech ? lv_color_hex(0xA1A1AA) : is_dev ? lv_color_hex(0x22C55E) : lv_color_hex(0xB45309), 0);
             break;
         }
         case 1:  // 菜单 — 对齐 BottomBar.tsx menu state
             _create_menu_overlay();
             break;
-        case 2: {  // 随机 — 对齐 BottomBar.tsx random state
-            Expression faces[] = {EXPR_HAPPY, EXPR_WINK, EXPR_NAUGHTY, EXPR_DIZZY, EXPR_TALKING};
-            expression_set(faces[esp_random() % 5], true);
+        case 2: {  // 随机 — v5.0
+            Expression faces[] = {EXPR_HAPPY, EXPR_WINK, EXPR_NAUGHTY, EXPR_DIZZY, EXPR_TALKING, EXPR_LOOK_AROUND, EXPR_YAWN, EXPR_CURIOUS, EXPR_EXCITED};
+            expression_set(faces[esp_random() % 9], true);
             break;
         }
         case 3:  // 对话
@@ -289,14 +296,15 @@ static void _create_menu_overlay(void)
     menu_shown = true;
     expression_set_drawing_enabled(false);
 
-    bool is_adult = (theme_v3_get_current() == THEME_ADULT);
-    lv_color_t bg = is_adult ? lv_color_hex(0x000000) : lv_color_hex(0xFFFBF0);
-    lv_color_t panel_bg = is_adult ? lv_color_hex(0x18181B) : lv_color_hex(0xFFFEF7);
-    lv_color_t text = is_adult ? lv_color_hex(0xFFFFFF) : lv_color_hex(0x000000);
-    lv_color_t accent = is_adult ? lv_color_hex(0x22D3EE) : lv_color_hex(0x9D6BFF);
-    lv_color_t sub_text = is_adult ? lv_color_hex(0xA1A1AA) : lv_color_hex(0x78716C);
-    lv_color_t item_bg = is_adult ? lv_color_hex(0x27272A) : lv_color_hex(0xFFFBF0);
-    lv_color_t item_border = is_adult ? lv_color_hex(0x083344) : lv_color_hex(0xFDE68A);
+    bool is_tech = (theme_v3_get_current() == THEME_TECH);
+    bool is_dev = (theme_v3_get_current() == THEME_DEV);
+    lv_color_t bg = is_tech ? lv_color_hex(0x000000) : is_dev ? lv_color_hex(0x0A0A0A) : lv_color_hex(0xFFFBF0);
+    lv_color_t panel_bg = is_tech ? lv_color_hex(0x18181B) : lv_color_hex(0xFFFEF7);
+    lv_color_t text = is_tech ? lv_color_hex(0xFFFFFF) : lv_color_hex(0x000000);
+    lv_color_t accent = is_tech ? lv_color_hex(0x22D3EE) : is_dev ? lv_color_hex(0x22C55E) : lv_color_hex(0xFF7F50);
+    lv_color_t sub_text = is_tech ? lv_color_hex(0xA1A1AA) : lv_color_hex(0x78716C);
+    lv_color_t item_bg = is_tech ? lv_color_hex(0x27272A) : lv_color_hex(0xFFFBF0);
+    lv_color_t item_border = is_tech ? lv_color_hex(0x083344) : is_dev ? lv_color_hex(0x14532D) : lv_color_hex(0xFDE68A);
 
     // 全屏遮罩
     menu_overlay = lv_obj_create(lv_screen_active());
@@ -343,7 +351,7 @@ static void _create_menu_overlay(void)
     lv_obj_t *btn_close = lv_btn_create(header);
     lv_obj_set_size(btn_close, 24, 24);
     lv_obj_set_style_radius(btn_close, 12, 0);
-    lv_obj_set_style_bg_color(btn_close, is_adult ? lv_color_hex(0x27272A) : lv_color_hex(0xFEF3C7), 0);
+    lv_obj_set_style_bg_color(btn_close, is_tech ? lv_color_hex(0x27272A) : lv_color_hex(0xFEF3C7), 0);
     lv_obj_set_style_border_width(btn_close, 0, 0);
     lv_obj_add_event_cb(btn_close, _menu_close_cb, LV_EVENT_CLICKED, NULL);
 
@@ -502,8 +510,10 @@ static void _create_bottom_bar(void)
     lv_obj_set_flex_flow(bottom_bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bottom_bar, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    // 对齐 BottomBar.tsx 容器颜色
-    if (theme_v3_get_current() == THEME_ADULT) {
+    // 对齐 v5.0 BottomBar.tsx
+    bool is_tech = (theme_v3_get_current() == THEME_TECH);
+    bool is_dev = (theme_v3_get_current() == THEME_DEV);
+    if (is_tech) {
         lv_obj_set_style_bg_opa(bottom_bar, LV_OPA_90, 0);
         lv_obj_set_style_bg_color(bottom_bar, lv_color_hex(0x18181B), 0);  // zinc-900/95
         lv_obj_set_style_border_width(bottom_bar, 1, 0);
@@ -541,7 +551,7 @@ static void _create_bottom_bar(void)
         lv_obj_center(label);
 
         // 显式文本色 (亮色, 高对比)
-        if (theme_v3_get_current() == THEME_ADULT) {
+        if (theme_v3_get_current() == THEME_TECH) {
             lv_obj_set_style_text_color(label, lv_color_hex(0xE4E4E7), 0);  // zinc-200 bright
             lv_obj_set_style_text_color(bb_buttons[i], lv_color_hex(0x22D3EE), LV_STATE_PRESSED);
             lv_obj_set_style_bg_color(bb_buttons[i], lv_color_hex(0x083344), LV_STATE_PRESSED);
@@ -603,7 +613,7 @@ static void _create_status_bar(void)
     lv_obj_remove_flag(status_bar, LV_OBJ_FLAG_CLICKABLE);
 
     // 对齐 StatusBar.tsx 颜色
-    if (theme_v3_get_current() == THEME_ADULT) {
+    if (theme_v3_get_current() == THEME_TECH) {
         lv_obj_set_style_bg_color(status_bar, lv_color_hex(0x18181B), 0);  // zinc-900
         lv_obj_set_style_text_color(status_bar, lv_color_hex(0xA1A1AA), 0); // zinc-400
     } else {
@@ -698,7 +708,7 @@ extern "C" void app_main(void)
     // ==============================================
     // 初始化 UI 层级
     // ==============================================
-    theme_v3_init(THEME_ADULT);
+    theme_v3_init(THEME_TECH);
     expressions_init();
 
     // UXV3.3 完整架构

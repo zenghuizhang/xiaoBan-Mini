@@ -105,15 +105,15 @@ static WifiConfigUIStep s_ui_step = WIFI_UI_STEP_AP;
 
 // ========== LVGL 样式辅助 ==========
 static lv_color_t _bg_color(void) {
-    return lv_color_hex(theme_v3_get_current() == THEME_ADULT ? 0x000000 : 0xFFFBEB);
+    return lv_color_hex(theme_v3_get_current() == THEME_TECH ? 0x000000 : 0xFFFBEB);
 }
 
 static lv_color_t _text_color(void) {
-    return lv_color_hex(theme_v3_get_current() == THEME_ADULT ? 0xFFFFFF : 0x000000);
+    return lv_color_hex(theme_v3_get_current() == THEME_TECH ? 0xFFFFFF : 0x000000);
 }
 
 static lv_color_t _accent_color(void) {
-    return lv_color_hex(theme_v3_get_current() == THEME_ADULT ? 0x22D3EE : 0xF97316);
+    return lv_color_hex(theme_v3_get_current() == THEME_TECH ? 0x22D3EE : 0xF97316);
 }
 
 // ========== Web配网页面HTML ==========
