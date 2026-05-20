@@ -1,5 +1,97 @@
 # xiaoBan-Mini 陪伴机器人 - 开发环境记录
 
+> **最后更新**: 2026-05-20
+> **当前版本**: v5.0 (对齐 桌面机器人UI_完整设计文档_v5.0.md)
+> **状态**: ✅ 核心功能完整，开机动画+Boot+RadialMenu+20表情+3主题+IMU+音频+记忆
+
+## 截图系统
+
+### PC 侧接收
+```bash
+# 方式1: 被动等待自动截图 (设备启动 ~8s 后自动发)
+python3 tools/capture.py /dev/ttyACM0 /tmp/screen.png --wait
+
+# 方式2: 主动触发 (USB Serial 发 's')
+python3 tools/capture.py /dev/ttyACM0 /tmp/screen.png
+```
+
+### 工作原理
+1. `screenshot_request()` 在主循环设 volatile flag
+2. `screenshot_process_pending()` 调用 `lv_snapshot_take_to_buf` (需要 `CONFIG_LV_USE_SNAPSHOT=y`)
+3. 快照数据传入独立 FreeRTOS task 做 base64 编码
+4. 编码结果通过 ESP_LOGI("SNAP", "SS:...") 输出
+5. PC 侧 `capture.py` 从串口接收 base64 → 解码 RGB565 → 保存 PNG
+
+### 触发方式
+| 方式 | 说明 |
+|------|------|
+| 启动自动 | `app_main` 在 idle 后 2s 调用 `screenshot_request()` |
+| 串口 `'s'` | USB Serial 发送 `'s'` 触发截图 (需主控制台=USB Serial JTAG) |
+| 串口 `'d'` | 禁用截图触发 (持久化到 NVS, 发货版本用) |
+| 串口 `'e'` | 重新启用截图触发 (持久化到 NVS) |
+| ~~双击~~ | 已移除（避免 UI 卡顿） |
+
+## v5.0 文件结构
+
+```
+cores3-espidf/main/
+├── app_main.cpp          # 主入口, UI 层级, 交互逻辑
+├── CMakeLists.txt        # 编译配置
+└── ui/
+    ├── theme_v3.h/cpp    # 3主题 (Tech/Child/Dev), scale=1.6
+    ├── expressions.h/cpp # 20种表情 + 呼吸 + 眨眼动画
+    ├── boot_anim.h/c     # 开机动画 (3.5s, 3主题)
+    ├── radial_menu.h/c   # 径向菜单 (6按钮, 双击触发)
+    ├── dialog_bubble.h/c # 对话气泡 (早安/建议/晚安)
+    ├── audio_feedback.h/cpp  # 音效 (M5.Speaker)
+    ├── motion_controller.h/cpp # IMU 体感 (BMI270)
+    ├── robot_memory.h/c  # NVS 记忆 (主题/问候/统计)
+    ├── wifi_config.h/cpp # WiFi 配网 (AP+DNS劫持+HTTP)
+    ├── qrcode.h/c        # QR 码显示 (lv_draw_rect)
+    ├── screenshot.h/c    # 截图回传 (异步 base64)
+    └── font_zh_14.h/c    # 中文字体 (2bpp, Noto Sans SC)
+```
+
+## v5.0 交互流程
+```
+开机 → BootAnim(3.5s) → idle(呼吸+瞳孔微动)
+  ↓ 双击
+RadialMenu (6按钮)
+  ├ 表情  → 随机表情
+  ├ 对话  → TALKING
+  ├ 设置  → MenuOverlay (WiFi/亮度/音量)
+  ├ 主题  → Tech↔Child↔Dev 循环
+  ├ 扩展  → BottomBar (16按钮, 各表情)
+  └ 随机  → 随机表情
+  ↓ IMU 体感
+倾斜/摇晃/轻敲 → curious/yawn/dizzy/wink
+  ↓ 时间
+6-10点首次 → Morning 气泡问候
+```
+
+## v5.0 设计对齐状态
+
+| v5.0 功能 | 文件 | 状态 |
+|----------|------|------|
+| BootAnimation (3主题) | boot_anim.c | ✅ |
+| RadialMenu (6按钮) | radial_menu.c | ✅ |
+| Face (20种表情) | expressions.cpp | ✅ |
+| 呼吸动画 + 瞳孔微动 | expressions.cpp | ✅ |
+| scale=1.6 | expressions.h | ✅ |
+| 3主题 Tech/Child/Dev | theme_v3.cpp | ✅ |
+| Wink 单次播放 | expressions.cpp | ✅ |
+| DialogBubble | dialog_bubble.c | ✅ |
+| IMU 体感 | motion_controller.cpp | ✅ |
+| 音效反馈 | audio_feedback.cpp | ✅ |
+| NVS 记忆 | robot_memory.c | ✅ |
+| WiFi QR 配网 | qrcode.c+wifi_config.cpp | ✅ |
+| BottomBar (16按钮) | app_main.cpp | ✅ |
+| 截图回传 | screenshot.c | ✅ |
+| Morning 问候 | app_main.cpp | ✅ |
+| MenuOverlay | app_main.cpp | ✅ |
+| StatusBar | ❌ 设计稿已移除 | — |
+| 粒子特效 | ⏳ ESP32 性能限制 | — |
+
 ## 编译工具
 - **arduino-cli** v1.4.1（不使用 PlatformIO）
 - **ESP-IDF** v5.2.1 — 已安装在 `/home/zzh/esp-idf`

@@ -13,7 +13,7 @@
 """
 import serial, time, sys, os, base64, re, argparse
 
-def capture_one(ser, out_path, send_cmd=True, timeout=15):
+def capture_one(ser, out_path, send_cmd=True, timeout=60):
     """捕获一张截图"""
     if send_cmd:
         ser.reset_input_buffer()
@@ -56,7 +56,7 @@ def capture_one(ser, out_path, send_cmd=True, timeout=15):
         return False
 
     b64 = ''.join(b64_data)
-    data = base64.b64decode(b64)
+    data = base64.b64decode(b64 + "====")
     print(f"  Decoded: {len(data)} bytes")
 
     # 320x240 RGB565
@@ -102,7 +102,7 @@ def main():
         for i in range(args.count):
             out = f"{args.output}".format(i=i) if args.count > 1 else args.output
             print(f"\nShot {i+1}/{args.count}...")
-            capture_one(ser, out, send_cmd=not args.wait, timeout=15)
+            capture_one(ser, out, send_cmd=not args.wait, timeout=60)
 
     ser.close()
 

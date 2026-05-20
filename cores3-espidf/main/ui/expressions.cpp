@@ -7,6 +7,7 @@
 #include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/timers.h>
+#include <math.h>
 
 static const char *TAG = "FACE";
 
@@ -24,9 +25,16 @@ static volatile uint32_t next_random_expr = EXPR_IDLE;
 static volatile bool pending_blink = false;
 static volatile bool pending_blink_state = false;
 
+// 动画状态
 static int32_t anim_dizzy_rot = 0;
 static int32_t anim_wink_phase = 0;
+static int32_t anim_pupil_x = 0;
+static int32_t anim_pupil_y = 0;
+static int32_t anim_breath_val = 0;
 static lv_anim_t face_anim;
+static lv_anim_t pupil_anim;
+static lv_anim_t breath_anim;
+static int _anim_tick = 0;  // 降频: 每 6 tick 刷新一次 (~30fps)
 static bool face_drawing_enabled = true;
 
 static void _face_draw_cb(lv_event_t *e);
@@ -76,6 +84,14 @@ static void _face_draw_cb(lv_event_t *e)
 
     // idle/deep_sleep/light_rest/alert 共用呼吸脉冲
     float breath_scale = 1.0f, breath_opa = 1.0f;
+
+    // v5.0 瞳孔微动: 从动画中读取 x/y 偏移
+    int pupil_x = anim_pupil_x;
+    int pupil_y = anim_pupil_y;
+
+    // 呼吸值 → scale/opacity 调制 (可见幅度: ±12%)
+    float breath_factor = anim_breath_val / 255.0f;  // 0~1
+    float breath_mod = 1.0f + 0.12f * sinf(breath_factor * 2.0f * M_PI);  // 0.88~1.12
 
     switch (expr) {
     case EXPR_IDLE:
@@ -162,11 +178,14 @@ static void _face_draw_cb(lv_event_t *e)
         break;
     }
 
-    int lw = (int)(base_lw * s * breath_scale);
-    int lh = (int)(base_lh * s * breath_scale);
-    int rw = (int)(base_rw * s * breath_scale);
-    int rh = (int)(base_rh * s * breath_scale);
-    ly_off = (int)(ly_off * s); ry_off = (int)(ry_off * s);
+    // 呼吸调制: 眼睛 scale
+    float bm = breath_mod;
+
+    int lw = (int)(base_lw * s * breath_scale * bm);
+    int lh = (int)(base_lh * s * breath_scale * bm);
+    int rw = (int)(base_rw * s * breath_scale * bm);
+    int rh = (int)(base_rh * s * breath_scale * bm);
+    ly_off = (int)(ly_off * s * bm); ry_off = (int)(ry_off * s * bm);
 
     int lr = r_style, rr = r_style;
     if (expr == EXPR_MENU) lr = rr = 10;
@@ -177,8 +196,8 @@ static void _face_draw_cb(lv_event_t *e)
     // 动态眼距
     int gap = (int)(FACE_EYE_GAP * s);
     int total = lw + gap + rw;
-    int lx = (320 - total) / 2 + lw / 2;
-    int rx = lx + lw / 2 + gap + rw / 2;
+    int lx = (320 - total) / 2 + lw / 2 + pupil_x;
+    int rx = lx + lw / 2 + gap + rw / 2 + pupil_x;
 
     // 发光
     _draw_glow(layer, lx, ey + ly_off, lw, lh, lr, fg);
@@ -489,11 +508,35 @@ static void _face_anim_cb(void *obj, int32_t v)
     lv_obj_invalidate(face_container);
 }
 
+static void _pupil_anim_cb(void *obj, int32_t v)
+{
+    float rad = v * M_PI / 180.0f;
+    anim_pupil_x = (int32_t)(sinf(rad * 3.7f) * 5.0f);
+    anim_pupil_y = (int32_t)(cosf(rad * 2.3f) * 3.0f);
+    if (++_anim_tick % 6 == 0) lv_obj_invalidate(face_container);
+}
+
+static void _breath_anim_cb(void *obj, int32_t v)
+{
+    anim_breath_val = v;
+    if (++_anim_tick % 6 == 0) lv_obj_invalidate(face_container);
+}
+
 static void _start_expression_anims(void)
 {
     lv_anim_delete(face_container, _face_anim_cb);
+    lv_anim_delete(face_container, _pupil_anim_cb);
+    lv_anim_delete(face_container, _breath_anim_cb);
+
+    // 瞳孔微动: 大部分状态都启用
+    bool pupil_active = true;
+    bool breath_active = true;
+    int pupil_dur = 8000;  // idle: 8s 周期
+    int breath_dur = 4000; // idle: 4s 周期
+
     switch (current_expr) {
     case EXPR_DIZZY:
+        pupil_active = false; breath_active = false;
         lv_anim_init(&face_anim);
         lv_anim_set_var(&face_anim, face_container);
         lv_anim_set_exec_cb(&face_anim, _face_anim_cb);
@@ -504,6 +547,7 @@ static void _start_expression_anims(void)
         lv_anim_start(&face_anim);
         break;
     case EXPR_TALKING:
+        pupil_dur = 4000; breath_dur = 2000;
         lv_anim_init(&face_anim);
         lv_anim_set_var(&face_anim, face_container);
         lv_anim_set_exec_cb(&face_anim, _face_anim_cb);
@@ -514,7 +558,7 @@ static void _start_expression_anims(void)
         lv_anim_start(&face_anim);
         break;
     case EXPR_WINK:
-        // v5.0: 单次播放, 1.5s
+        pupil_active = false;
         lv_anim_init(&face_anim);
         lv_anim_set_var(&face_anim, face_container);
         lv_anim_set_exec_cb(&face_anim, _face_anim_cb);
@@ -526,9 +570,11 @@ static void _start_expression_anims(void)
         lv_anim_start(&face_anim);
         break;
     case EXPR_CRYING:
+        pupil_dur = 4000; breath_dur = 3000;
         _start_tears();
         break;
     case EXPR_CELEBRATE:
+        pupil_dur = 1000; breath_dur = 500;
         lv_anim_init(&face_anim);
         lv_anim_set_var(&face_anim, face_container);
         lv_anim_set_exec_cb(&face_anim, _face_anim_cb);
@@ -539,21 +585,52 @@ static void _start_expression_anims(void)
         lv_anim_set_path_cb(&face_anim, lv_anim_path_ease_in_out);
         lv_anim_start(&face_anim);
         break;
+    case EXPR_ALERT:
+        pupil_dur = 2500; breath_dur = 2500;
+        break;
+    case EXPR_EXCITED:
+        pupil_dur = 1500; breath_dur = 1500;
+        break;
+    case EXPR_DEEP_SLEEP:
+        pupil_dur = 10000; breath_dur = 8000;
+        break;
+    case EXPR_LIGHT_REST:
+        pupil_dur = 8000; breath_dur = 6000;
+        break;
+    case EXPR_LOOK_AROUND:
+        pupil_dur = 3000;  // faster eye movement
+        break;
     case EXPR_BREATH:
     case EXPR_IDLE:
-        // 呼吸脉冲 (idle 状态也加呼吸)
-        lv_anim_init(&face_anim);
-        lv_anim_set_var(&face_anim, face_container);
-        lv_anim_set_exec_cb(&face_anim, _face_anim_cb);
-        lv_anim_set_values(&face_anim, 0, 1);
-        lv_anim_set_time(&face_anim, 2000);
-        lv_anim_set_playback_time(&face_anim, 2000);
-        lv_anim_set_repeat_count(&face_anim, LV_ANIM_REPEAT_INFINITE);
-        lv_anim_start(&face_anim);
+        pupil_dur = 8000; breath_dur = 4000;
         break;
     default:
         _stop_tears();
         break;
+    }
+
+    // 瞳孔微动 (v5.0 pupilVariants: 自然漂移轨迹)
+    if (pupil_active) {
+        lv_anim_init(&pupil_anim);
+        lv_anim_set_var(&pupil_anim, face_container);
+        lv_anim_set_exec_cb(&pupil_anim, _pupil_anim_cb);
+        lv_anim_set_values(&pupil_anim, 0, 360);
+        lv_anim_set_time(&pupil_anim, pupil_dur);
+        lv_anim_set_repeat_count(&pupil_anim, LV_ANIM_REPEAT_INFINITE);
+        lv_anim_set_path_cb(&pupil_anim, lv_anim_path_linear);
+        lv_anim_start(&pupil_anim);
+    }
+
+    // 呼吸脉冲 (v5.0 breathing: scale + opacity 同步)
+    if (breath_active) {
+        lv_anim_init(&breath_anim);
+        lv_anim_set_var(&breath_anim, face_container);
+        lv_anim_set_exec_cb(&breath_anim, _breath_anim_cb);
+        lv_anim_set_values(&breath_anim, 0, 255);
+        lv_anim_set_time(&breath_anim, breath_dur);
+        lv_anim_set_playback_time(&breath_anim, breath_dur);
+        lv_anim_set_repeat_count(&breath_anim, LV_ANIM_REPEAT_INFINITE);
+        lv_anim_start(&breath_anim);
     }
 }
 
@@ -591,7 +668,7 @@ void expressions_init(void)
 {
     face_container = lv_obj_create(lv_screen_active());
     lv_obj_set_size(face_container, 320, 192);
-    lv_obj_set_pos(face_container, 0, 18);
+    lv_obj_set_pos(face_container, 0, 0);  // 留底部 48px, 避免覆盖全屏
     lv_obj_set_style_bg_opa(face_container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(face_container, 0, 0);
     lv_obj_set_style_pad_all(face_container, 0, 0);

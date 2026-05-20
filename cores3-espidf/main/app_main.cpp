@@ -23,8 +23,14 @@
 #include "ui/interaction.h"
 #include "ui/wifi_config.h"
 #include "ui/font_zh_14.h"
-#include "ui/screenshot.h"
+// #include "ui/screenshot.h"  // 截图已禁用
 #include "ui/qrcode.h"
+#include "ui/boot_anim.h"
+#include "ui/radial_menu.h"
+#include "ui/dialog_bubble.h"
+#include "ui/audio_feedback.h"
+#include "ui/robot_memory.h"
+#include "ui/motion_controller.h"
 
 static const char *TAG = "XIAOBAN";
 
@@ -35,45 +41,10 @@ static lv_color_t lv_buf2[320 * LV_BUFFER_LINES];
 
 // ========== BottomBar 按钮定义 (对齐 BottomBar.tsx) ==========
 // v5.0: 16 按钮 (核心表情 + 功能)
-#define BB_BTN_COUNT 16
-static const char *bb_labels[] = {
-    "Th", "Me", "Rd",  // 主题/菜单/随机
-    "Tk", "Hp", "Wk",  // 对话/开心/眨眼
-    "Nt", "Dz", "Cr",  // 调皮/眩晕/哭泣
-    "Br", "Lk", "Yn",  // 呼吸/张望/哈欠
-    "Cu", "Ex", "An",  // 好奇/兴奋/生气
-    "Ce",              // 庆祝
-};
-static Expression bb_expr[] = {
-    EXPR_IDLE,        // 主题
-    EXPR_MENU,        // 菜单
-    EXPR_IDLE,        // 随机 (handler 里随机)
-    EXPR_TALKING,     // 对话
-    EXPR_HAPPY,       // 开心
-    EXPR_WINK,        // 眨眼
-    EXPR_NAUGHTY,     // 调皮
-    EXPR_DIZZY,       // 眩晕
-    EXPR_CRYING,      // 哭泣
-    EXPR_BREATH,      // 呼吸
-    EXPR_LOOK_AROUND, // 张望
-    EXPR_YAWN,        // 哈欠
-    EXPR_CURIOUS,     // 好奇
-    EXPR_EXCITED,     // 兴奋
-    EXPR_ANGRY,       // 生气
-    EXPR_CELEBRATE,   // 庆祝
-};
 
 // ========== 全局 UI 对象 ==========
-static lv_obj_t *status_bar = NULL;
-static lv_obj_t *bottom_bar = NULL;
-static lv_obj_t *bb_buttons[BB_BTN_COUNT] = {NULL};
-static bool bottom_bar_shown = false;
 
 // StatusBar 标签引用（定时刷新用）
-static lv_obj_t *sb_left_label = NULL;
-static lv_obj_t *sb_center_label = NULL;
-static lv_obj_t *sb_right_label = NULL;
-static lv_timer_t *sb_refresh_timer = NULL;
 
 // 双击检测
 static uint32_t last_click_time = 0;
@@ -109,37 +80,52 @@ static void _lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint
 }
 
 // ========== UX 动画: 底部栏平滑滑动 ==========
-static void _bottom_bar_anim_cb(void *obj, int32_t y)
-{
-    lv_obj_set_y((lv_obj_t*)obj, y);
-}
 
-static void _bottom_bar_anim_done_cb(lv_anim_t *a)
-{
-    // 动画结束后强制全屏刷新，避免残留白条
-    lv_obj_invalidate(lv_screen_active());
-}
 
-static void _animate_bottom_bar(bool show)
-{
-    static lv_anim_t anim;
-    lv_anim_init(&anim);
-    lv_anim_set_var(&anim, bottom_bar);
-    lv_anim_set_exec_cb(&anim, _bottom_bar_anim_cb);
-    lv_anim_set_ready_cb(&anim, _bottom_bar_anim_done_cb);
-    lv_anim_set_time(&anim, 300);
-    lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
 
-    int32_t current_y = lv_obj_get_y(bottom_bar);
-    lv_anim_set_values(&anim, current_y, show ? 200 : 310);
-
-    lv_anim_start(&anim);
-    bottom_bar_shown = show;
-}
-
-// Forward declarations for menu
+// Forward declarations
 static void _menu_close_cb(lv_event_t *e);
 static void _create_menu_overlay(void);
+
+// v5.0 径向菜单回调
+static void _radial_menu_cb(RadialMenuAction action)
+{
+    // 简单处理 (不做耗时操作: 音频/NVS 会卡 UI)
+    switch (action) {
+    case RM_ACTION_EXPRESSIONS:
+        expression_set(EXPR_HAPPY, true);
+        break;
+    case RM_ACTION_DIALOGUE:
+        expression_set(EXPR_TALKING, true);
+        break;
+    case RM_ACTION_SETTINGS:
+        _create_menu_overlay();
+        break;
+    case RM_ACTION_THEME: {
+        ThemeV3 cur = theme_v3_get_current();
+        ThemeV3 n = (cur == THEME_TECH) ? THEME_CHILD : (cur == THEME_CHILD) ? THEME_DEV : THEME_TECH;
+        theme_v3_switch(n);
+        expression_refresh_theme();
+        break;
+    }
+    case RM_ACTION_EXTENSIONS:  // "扩展" → 随机表情 (底部栏已移除)
+    case RM_ACTION_RANDOM:
+        expression_set((Expression)(EXPR_IDLE + 1 + (esp_random() % 15)), true);
+        break;
+    case RM_ACTION_CLOSE:
+        break;
+    }
+    radial_menu_close();
+}
+
+static volatile bool g_boot_done = false;
+
+// 开机动画完成后 → 设标志 (不在 lv_anim 回调内操作 LVGL)
+static void _on_boot_done(void)
+{
+    g_boot_done = true;
+    ESP_LOGI(TAG, "boot anim finished");
+}
 
 static void _screen_face_click_cb(lv_event_t *e)
 {
@@ -147,104 +133,22 @@ static void _screen_face_click_cb(lv_event_t *e)
     if (code == LV_EVENT_CLICKED) {
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-        // 如果菜单已打开，单击关闭菜单
-        if (menu_shown) {
-            _menu_close_cb(NULL);
-            return;
-        }
+        // 关闭已打开的覆盖层
+        if (menu_shown) { _menu_close_cb(NULL); return; }
+        if (radial_menu_is_shown()) { radial_menu_close(); return; }
 
-        lv_indev_t *indev = lv_indev_get_act();
-        if (!indev) return;
-
-        lv_point_t p;
-        lv_indev_get_point(indev, &p);
-
-        // 只在面部区域响应（y < 192, 避开状态栏和底部栏区域）
-        if (p.y < 192) {
-            // V3.9: 双击检测 — 对齐原型双击呼出/隐藏 BottomBar
-            if (now - last_click_time < DOUBLE_CLICK_INTERVAL) {
-                ESP_LOGI(TAG, "双击面部区域: 切换底部栏");
-                _animate_bottom_bar(!bottom_bar_shown);
-                screenshot_request();  // 每次切换底部栏都截一张图
-                last_click_time = 0;  // 重置，避免三击
-
-                expression_set(EXPR_HAPPY, true);
-                expr_end_time = now + 800;
-                expr_pending = true;
-            } else {
-                last_click_time = now;
-            }
+        // v5.0: 双击 → 径向菜单 (150-500ms 间隔)
+        if (now - last_click_time > 150 && now - last_click_time < 500) {
+            ESP_LOGI(TAG, "双击 → 径向菜单");
+            radial_menu_show(lv_screen_active(), _radial_menu_cb);
+            last_click_time = 0;
+        } else {
+            last_click_time = now;
         }
     }
 }
 
-static void _bottom_bar_button_cb(lv_event_t *e)
-{
-    int btn_idx = (int)(intptr_t)lv_event_get_user_data(e);
-    ESP_LOGI(TAG, "底部栏按钮点击: %s (idx=%d)", bb_labels[btn_idx], btn_idx);
-
-    switch (btn_idx) {
-        case 0: {  // 主题切换 — v5.0: Tech→Child→Dev→Tech
-            ThemeV3 cur = theme_v3_get_current();
-            ThemeV3 new_theme = (cur == THEME_TECH) ? THEME_CHILD
-                             : (cur == THEME_CHILD) ? THEME_DEV : THEME_TECH;
-            theme_v3_switch(new_theme);
-            expression_refresh_theme();
-
-            bool is_tech = (new_theme == THEME_TECH);
-            bool is_dev = (new_theme == THEME_DEV);
-
-            // BottomBar 容器颜色 — 对齐 BottomBar.tsx
-            lv_obj_set_style_bg_color(bottom_bar,
-                is_tech ? lv_color_hex(0x18181B) : is_dev ? lv_color_hex(0x0A0A0A) : lv_color_hex(0xFEF3C7), 0);
-            lv_obj_set_style_border_color(bottom_bar,
-                is_tech ? lv_color_hex(0x27272A) : is_dev ? lv_color_hex(0x14532D) : lv_color_hex(0xFDE68A), 0);
-
-            // BottomBar 按钮颜色 — 同步更新
-            for (int i = 0; i < BB_BTN_COUNT; i++) {
-                lv_obj_t *label = lv_obj_get_child(bb_buttons[i], 0);
-                if (is_tech) {
-                    if (label) lv_obj_set_style_text_color(label, lv_color_hex(0xE4E4E7), 0);
-                    lv_obj_set_style_bg_opa(bb_buttons[i], LV_OPA_TRANSP, 0);
-                    lv_obj_set_style_border_width(bb_buttons[i], 0, 0);
-                    lv_obj_set_style_bg_color(bb_buttons[i], lv_color_hex(0x083344), LV_STATE_PRESSED);
-                    lv_obj_set_style_text_color(bb_buttons[i], lv_color_hex(0x22D3EE), LV_STATE_PRESSED);
-                } else {
-                    if (label) lv_obj_set_style_text_color(label, lv_color_hex(0x7C2D12), 0);
-                    lv_obj_set_style_bg_opa(bb_buttons[i], LV_OPA_TRANSP, 0);
-                    lv_obj_set_style_border_width(bb_buttons[i], 0, 0);
-                    lv_obj_set_style_bg_color(bb_buttons[i], lv_color_hex(0xFB923C), LV_STATE_PRESSED);
-                    lv_obj_set_style_text_color(bb_buttons[i], lv_color_hex(0xFFFFFF), LV_STATE_PRESSED);
-                }
-            }
-
-            // StatusBar 颜色 — 对齐 StatusBar.tsx
-            lv_obj_set_style_bg_color(status_bar,
-                is_tech ? lv_color_hex(0x18181B) : is_dev ? lv_color_hex(0x0A0A0A) : lv_color_hex(0xFDE68A), 0);
-            lv_obj_set_style_text_color(status_bar,
-                is_tech ? lv_color_hex(0xA1A1AA) : is_dev ? lv_color_hex(0x22C55E) : lv_color_hex(0xB45309), 0);
-            break;
-        }
-        case 1:  // 菜单 — 对齐 BottomBar.tsx menu state
-            _create_menu_overlay();
-            break;
-        case 2: {  // 随机 — v5.0
-            Expression faces[] = {EXPR_HAPPY, EXPR_WINK, EXPR_NAUGHTY, EXPR_DIZZY, EXPR_TALKING, EXPR_LOOK_AROUND, EXPR_YAWN, EXPR_CURIOUS, EXPR_EXCITED};
-            expression_set(faces[esp_random() % 9], true);
-            break;
-        }
-        case 3:  // 对话
-        case 4:  // 开心
-        case 5:  // 眨眼
-        case 6:  // 调皮
-        case 7:  // 眩晕
-        case 8:  // 哭泣
-            expression_set(bb_expr[btn_idx], true);
-            break;
-    }
-}
-
-// ========== Menu 浮层 V3.9 - 对齐原型 ==========
+// ========== Menu 浮层 - 对齐原型 ==========
 static void _menu_item_wifi_cb(lv_event_t *e)
 {
     _menu_close_cb(NULL);
@@ -490,159 +394,17 @@ static void _create_menu_overlay(void)
     ESP_LOGI(TAG, "Menu V3.9 浮层已打开 - 原型对齐");
 }
 
-static void _create_bottom_bar(void)
-{
-    // 对齐 BottomBar.tsx: h-10(40px), px-1.5(6px pad), gap-1(4px)
-    const int bar_height = 40;
-    const int btn_w = 34;
-    const int btn_h = 32;
-
-    bottom_bar = lv_obj_create(lv_screen_active());
-    lv_obj_set_size(bottom_bar, 320, bar_height);
-    lv_obj_set_pos(bottom_bar, 0, 300);  // 默认隐藏在屏幕外
-    lv_obj_set_style_radius(bottom_bar, 0, 0);
-    lv_obj_set_style_border_width(bottom_bar, 0, 0);
-    lv_obj_set_style_pad_top(bottom_bar, 4, 0);
-    lv_obj_set_style_pad_bottom(bottom_bar, 4, 0);
-    lv_obj_set_style_pad_left(bottom_bar, 6, 0);
-    lv_obj_set_style_pad_right(bottom_bar, 6, 0);
-    lv_obj_set_style_layout(bottom_bar, LV_LAYOUT_FLEX, 0);
-    lv_obj_set_flex_flow(bottom_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(bottom_bar, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    // 对齐 v5.0 BottomBar.tsx
-    bool is_tech = (theme_v3_get_current() == THEME_TECH);
-    bool is_dev = (theme_v3_get_current() == THEME_DEV);
-    if (is_tech) {
-        lv_obj_set_style_bg_opa(bottom_bar, LV_OPA_90, 0);
-        lv_obj_set_style_bg_color(bottom_bar, lv_color_hex(0x18181B), 0);  // zinc-900/95
-        lv_obj_set_style_border_width(bottom_bar, 1, 0);
-        lv_obj_set_style_border_color(bottom_bar, lv_color_hex(0x27272A), 0);  // border-zinc-800
-        lv_obj_set_style_border_opa(bottom_bar, LV_OPA_COVER, 0);
-        lv_obj_set_style_text_color(bottom_bar, lv_color_hex(0xA1A1AA), 0);  // zinc-400
-    } else {
-        lv_obj_set_style_bg_opa(bottom_bar, LV_OPA_90, 0);
-        lv_obj_set_style_bg_color(bottom_bar, lv_color_hex(0xFEF3C7), 0);  // amber-100/95
-        lv_obj_set_style_border_width(bottom_bar, 1, 0);
-        lv_obj_set_style_border_color(bottom_bar, lv_color_hex(0xFDE68A), 0);  // border-amber-200
-        lv_obj_set_style_border_opa(bottom_bar, LV_OPA_COVER, 0);
-        lv_obj_set_style_text_color(bottom_bar, lv_color_hex(0xB45309), 0);  // amber-700
-    }
-
-    for (int i = 0; i < BB_BTN_COUNT; i++) {
-        // 使用 lv_obj + CLICKABLE, 不用 lv_btn (避免主题样式干扰)
-        bb_buttons[i] = lv_obj_create(bottom_bar);
-        lv_obj_set_size(bb_buttons[i], btn_w, btn_h);
-        lv_obj_add_flag(bb_buttons[i], LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_pad_all(bb_buttons[i], 0, 0);
-        lv_obj_set_style_radius(bb_buttons[i], 6, 0);
-        lv_obj_set_style_bg_opa(bb_buttons[i], LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(bb_buttons[i], 0, 0);
-        lv_obj_set_style_shadow_width(bb_buttons[i], 0, 0);
-        lv_obj_set_style_bg_color(bb_buttons[i], lv_color_hex(0x083344), LV_STATE_PRESSED);
-        lv_obj_set_style_bg_opa(bb_buttons[i], LV_OPA_COVER, LV_STATE_PRESSED);
-
-        lv_obj_add_event_cb(bb_buttons[i], _bottom_bar_button_cb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
-
-        // 标签: 简单 ASCII, Montserrat 肯定能渲染
-        lv_obj_t *label = lv_label_create(bb_buttons[i]);
-        lv_label_set_text(label, bb_labels[i]);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-        lv_obj_center(label);
-
-        // 显式文本色 (亮色, 高对比)
-        if (theme_v3_get_current() == THEME_TECH) {
-            lv_obj_set_style_text_color(label, lv_color_hex(0xE4E4E7), 0);  // zinc-200 bright
-            lv_obj_set_style_text_color(bb_buttons[i], lv_color_hex(0x22D3EE), LV_STATE_PRESSED);
-            lv_obj_set_style_bg_color(bb_buttons[i], lv_color_hex(0x083344), LV_STATE_PRESSED);
-        } else {
-            lv_obj_set_style_text_color(label, lv_color_hex(0x7C2D12), 0);  // amber-900 dark
-            lv_obj_set_style_text_color(bb_buttons[i], lv_color_hex(0xFFFFFF), LV_STATE_PRESSED);
-            lv_obj_set_style_bg_color(bb_buttons[i], lv_color_hex(0xFB923C), LV_STATE_PRESSED);
-        }
-    }
-
-    ESP_LOGI(TAG, "✓ 底部栏: 9个按钮 (颜文字标签), 原型对齐");
-    for (int i = 0; i < BB_BTN_COUNT; i++) {
-        ESP_LOGI(TAG, "  btn[%d] = '%s'", i, bb_labels[i]);
-    }
-}
-
-static void _status_bar_refresh(lv_timer_t *timer)
-{
-    if (!sb_left_label || !sb_center_label || !sb_right_label) return;
-
-    // WiFi 状态 - V3.9: 文本图标替代 emoji
-    if (wifi_get_state() == WIFI_CONNECTED) {
-        lv_label_set_text_fmt(sb_left_label, "WiFi %s", wifi_get_ssid());
-    } else if (wifi_get_state() == WIFI_CONFIG_AP_MODE) {
-        lv_label_set_text(sb_left_label, "AP Mode");
-    } else {
-        lv_label_set_text(sb_left_label, "No WiFi");
-    }
-
-    // 时间
-    time_t now;
-    time(&now);
-    struct tm *t = localtime(&now);
-    lv_label_set_text_fmt(sb_center_label, "%02d:%02d", t->tm_hour, t->tm_min);
-
-    // 电量
-    int bat = M5.Power.getBatteryLevel();
-    bool charging = (M5.Power.isCharging() != 0);
-    if (charging) {
-        lv_label_set_text_fmt(sb_right_label, "%d%%+", bat);
-    } else {
-        lv_label_set_text_fmt(sb_right_label, "%d%%", bat);
-    }
-}
-
-static void _create_status_bar(void)
-{
-    // V3.9: 对齐原型 StatusBar 设计
-    status_bar = lv_obj_create(lv_screen_active());
-    lv_obj_set_size(status_bar, 320, 18);
-    lv_obj_set_pos(status_bar, 0, 0);
-    lv_obj_set_style_radius(status_bar, 0, 0);
-    lv_obj_set_style_border_width(status_bar, 0, 0);
-    lv_obj_set_style_pad_left(status_bar, 8, 0);
-    lv_obj_set_style_pad_right(status_bar, 8, 0);
-    lv_obj_set_style_layout(status_bar, LV_LAYOUT_FLEX, 0);
-    lv_obj_set_flex_flow(status_bar, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(status_bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_remove_flag(status_bar, LV_OBJ_FLAG_CLICKABLE);
-
-    // 对齐 StatusBar.tsx 颜色
-    if (theme_v3_get_current() == THEME_TECH) {
-        lv_obj_set_style_bg_color(status_bar, lv_color_hex(0x18181B), 0);  // zinc-900
-        lv_obj_set_style_text_color(status_bar, lv_color_hex(0xA1A1AA), 0); // zinc-400
-    } else {
-        lv_obj_set_style_bg_color(status_bar, lv_color_hex(0xFDE68A), 0);  // amber-200
-        lv_obj_set_style_text_color(status_bar, lv_color_hex(0xB45309), 0); // amber-700
-    }
-
-    sb_left_label = lv_label_create(status_bar);
-    lv_obj_set_style_text_font(sb_left_label, &lv_font_montserrat_14, 0);
-    sb_center_label = lv_label_create(status_bar);
-    lv_obj_set_style_text_font(sb_center_label, &lv_font_montserrat_14, 0);
-    sb_right_label = lv_label_create(status_bar);
-    lv_obj_set_style_text_font(sb_right_label, &lv_font_montserrat_14, 0);
-
-    _status_bar_refresh(NULL);
-    sb_refresh_timer = lv_timer_create(_status_bar_refresh, 30000, NULL);
-
-    ESP_LOGI(TAG, "StatusBar V3.9 创建完成");
-}
-
 static void _touch_read_callback(lv_indev_t *indev, lv_indev_data_t *data)
 {
     auto touch = M5.Touch.getDetail();
 
     if (touch.wasPressed() || touch.isPressed()) {
-        // M5.Touch 已经按 setRotation(1) 处理好坐标，直接使用
         data->point.x = touch.x;
         data->point.y = touch.y;
         data->state = LV_INDEV_STATE_PRESSED;
+        // 每 50 次 press 打印一次 (避免刷屏)
+        static int cnt = 0;
+        if (++cnt % 50 == 1) ESP_LOGI("TOUCH", "press at (%d,%d)", touch.x, touch.y);
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
     }
@@ -702,18 +464,43 @@ extern "C" void app_main(void)
     lv_obj_add_flag(lv_screen_active(), LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(lv_screen_active(), LV_OBJ_FLAG_SCROLLABLE);
 
-    // 启动截图系统 (串口监听 's' 命令)
-    screenshot_init();
+    // 启动各子系统 (截图编译级禁用)
+    memory_init();
+    audio_init();
+    motion_init();
+
+    // 默认 Tech 主题 (后续可通过 NVS 恢复偏好)
+    ThemeV3 saved_theme = THEME_TECH;  // memory_load_theme();
 
     // ==============================================
-    // 初始化 UI 层级
+    // v5.0 开机动画: 3.5s (对齐 BootAnimation.tsx)
     // ==============================================
-    theme_v3_init(THEME_TECH);
-    expressions_init();
+    theme_v3_init(saved_theme);
+    expressions_init();  // 先创建 face_container (但被 boot 覆盖)
+    expression_set_drawing_enabled(false);  // 开机时隐藏面部
 
-    // UXV3.3 完整架构
-    _create_status_bar();
-    _create_bottom_bar();
+    boot_anim_play(lv_screen_active(), _on_boot_done);
+
+    // 等待开机动画完成 (轮询 M5 + LVGL, 保持触摸响应)
+    // boot_anim 内部 3.5s 后回调 _on_boot_done → 设 g_boot_done=true
+    for (int i = 0; i < 500 && !g_boot_done; i++) {
+        M5.update();  // 保持触摸面板刷新
+        lv_timer_handler();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    // 开机完成, 在干净的上下文启动面部
+    expression_set_drawing_enabled(true);
+    expression_set(EXPR_IDLE, false);
+    lv_obj_invalidate(lv_screen_active());
+    // 刷新 30 帧确保面部立刻出现
+    for (int i = 0; i < 30; i++) {
+        lv_timer_handler();
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    ESP_LOGI(TAG, "face live");
+
+    // v5.0: 不创建 StatusBar (设计稿已移除)
     expression_start_carousel();
 
     // ✅ 屏幕背景点击事件（替代主循环中的双重 Touch 读取）
@@ -725,22 +512,14 @@ extern "C" void app_main(void)
     wifi_init();
 
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "系统启动完成! V3.9 原型对齐迭代");
+    ESP_LOGI(TAG, "系统启动完成! v5.0");
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "  StatusBar: WiFi/时间/电量 30秒刷新");
-    ESP_LOGI(TAG, "  表情: 8种 + 动态动画 + 眨眼 + 轮播");
-    ESP_LOGI(TAG, "  BottomBar: 9按钮 tab式 (双击面部呼出)");
-    ESP_LOGI(TAG, "  Menu: WiFi/亮度/音量/关于");
-    ESP_LOGI(TAG, "  截图: 串口发 's' 触发, 或启动后自动截一张");
-
-    // 启动截图延迟触发 (等渲染完成)
-    screenshot_boot_trigger();
 
     // ==============================================
     // 主循环
     // ==============================================
     while (1) {
-        M5.update();  // ✅ 只调用一次 M5.update()！
+        M5.update();
 
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
@@ -753,8 +532,28 @@ extern "C" void app_main(void)
         // 表情轮播
         expression_process_pending();
 
-        // 截图回传 (串口 's' 命令)
-        screenshot_process_pending();
+        // v5.0: IMU 体感检测
+        MotionAction ma = motion_poll();
+        if (ma != MOTION_NONE) {
+            switch (ma) {
+            case MOTION_TILT_FORWARD: expression_set(EXPR_CURIOUS, true); break;
+            case MOTION_TILT_BACKWARD: expression_set(EXPR_YAWN, true); break;
+            case MOTION_TILT_LEFT: case MOTION_TILT_RIGHT: expression_set(EXPR_LOOK_AROUND, true); break;
+            case MOTION_SHAKE: expression_set(EXPR_DIZZY, true); break;
+            case MOTION_TAP: expression_set(EXPR_WINK, true); break;
+            default: break;
+            }
+        }
+
+        // v5.0: 早安问候检测
+        static bool morning_checked = false;
+        if (!morning_checked && now > 10000) {  // 10s 后检查
+            morning_checked = true;
+            if (memory_should_morning_greet()) {
+                dialog_bubble_show(lv_screen_active(), DIALOG_MORNING, 4000);
+                expression_set(EXPR_MORNING, true);
+            }
+        }
 
         // ✅ LVGL 统一处理触屏输入
         lv_timer_handler();

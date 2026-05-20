@@ -5,8 +5,15 @@ idf_component_register(
         "ui/expressions.cpp"
         "ui/wifi_config.cpp"
         "ui/font_zh_14.c"
-        "ui/screenshot.c"
+        # "ui/screenshot.c"  # 暂时禁用截图
         "ui/qrcode.c"
+        "ui/boot_anim.c"
+        "ui/radial_menu.c"
+        "ui/boot_anim.c"
+        "ui/dialog_bubble.c"
+        "ui/audio_feedback.cpp"
+        "ui/robot_memory.c"
+        "ui/motion_controller.cpp"
     INCLUDE_DIRS
         "."
         "ui"

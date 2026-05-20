@@ -38,10 +38,10 @@ typedef enum {
 #define EYE_W_BASE      32
 #define EYE_H_BASE      40
 
-// 眼嘴 Y 坐标 (容器内偏移)
-#define EYE_Y           87      // 105 - 18(StatusBar)
+// 眼嘴 Y 坐标 (v5.0: 全屏, 无 StatusBar)
+#define EYE_Y           105
 #define MOUTH_X         160
-#define MOUTH_Y         154     // 172 - 18
+#define MOUTH_Y         172
 
 // Dev 主题方角半径
 #define EYE_R_TECH      16
