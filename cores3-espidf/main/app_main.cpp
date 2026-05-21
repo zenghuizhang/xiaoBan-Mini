@@ -32,6 +32,7 @@
 #include "ui/robot_memory.h"
 #include "ui/motion_controller.h"
 #include "ui/icons/icons.h"
+#include "ui/tech_ui.h"
 #include <math.h>
 
 static const char *TAG = "XIAOBAN";

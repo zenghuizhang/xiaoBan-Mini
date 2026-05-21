@@ -11,6 +11,7 @@ idf_component_register(
         "ui/boot_anim.c"
         "ui/radial_menu.c"
         "ui/dialog_bubble.c"
+        "ui/tech_ui.c"
         "ui/audio_feedback.cpp"
         "ui/robot_memory.c"
         "ui/motion_controller.cpp"
