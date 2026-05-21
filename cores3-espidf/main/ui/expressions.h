@@ -28,7 +28,11 @@ typedef enum {
     EXPR_DEEP_SLEEP,    // 深睡 (极窄眼)
     EXPR_LIGHT_REST,    // 浅休
     EXPR_ALERT,         // 警觉 (睁大)
-    EXPR_MORNING,       // 早安 (渐变睁眼)
+    EXPR_MORNING,       // 早安
+    EXPR_THINKING,      // v6.0: 思考 (侧眼+小嘴)
+    EXPR_SURPRISED,     // v6.0: 惊讶 (大眼+圆嘴)
+    EXPR_SLEEP_WAKE,    // v6.0: 睡醒 (渐睁眼)
+    EXPR_LOST,          // v6.0: 迷茫 (下垂眼+倒嘴)
 } Expression;
 
 // v5.0: baseScale = 1.6

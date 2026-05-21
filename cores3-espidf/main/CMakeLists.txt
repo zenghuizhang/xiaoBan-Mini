@@ -5,15 +5,21 @@ idf_component_register(
         "ui/expressions.cpp"
         "ui/wifi_config.cpp"
         "ui/font_zh_14.c"
-        # "ui/screenshot.c"  # 暂时禁用截图
+        "ui/font_zh_22.c"
+        # "ui/screenshot.c"  # 截图已禁用
         "ui/qrcode.c"
         "ui/boot_anim.c"
         "ui/radial_menu.c"
-        "ui/boot_anim.c"
         "ui/dialog_bubble.c"
         "ui/audio_feedback.cpp"
         "ui/robot_memory.c"
         "ui/motion_controller.cpp"
+        "ui/icons/icon_face.c"
+        "ui/icons/icon_talk.c"
+        "ui/icons/icon_settings.c"
+        "ui/icons/icon_theme.c"
+        "ui/icons/icon_ext.c"
+        "ui/icons/icon_random.c"
     INCLUDE_DIRS
         "."
         "ui"

@@ -31,6 +31,8 @@
 #include "ui/audio_feedback.h"
 #include "ui/robot_memory.h"
 #include "ui/motion_controller.h"
+#include "ui/icons/icons.h"
+#include <math.h>
 
 static const char *TAG = "XIAOBAN";
 
@@ -53,10 +55,7 @@ static uint32_t last_click_time = 0;
 // Menu 浮层
 static lv_obj_t *menu_overlay = NULL;
 static bool menu_shown = false;
-static lv_obj_t *brightness_val_label = NULL;
-static lv_obj_t *volume_val_label = NULL;
-static uint8_t current_brightness = 200;
-static uint8_t current_volume = 100;
+// (brightness/volume 变量在 settings_show 函数内 static)
 
 // 表情自动恢复状态（全局，点击事件回调使用）
 static uint32_t expr_end_time = 0;
@@ -133,14 +132,14 @@ static void _screen_face_click_cb(lv_event_t *e)
     if (code == LV_EVENT_CLICKED) {
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-        // 关闭已打开的覆盖层
-        if (menu_shown) { _menu_close_cb(NULL); return; }
-        if (radial_menu_is_shown()) { radial_menu_close(); return; }
-
-        // v5.0: 双击 → 径向菜单 (150-500ms 间隔)
-        if (now - last_click_time > 150 && now - last_click_time < 500) {
-            ESP_LOGI(TAG, "双击 → 径向菜单");
-            radial_menu_show(lv_screen_active(), _radial_menu_cb);
+        // v6.0: 双击 → 切换 MenuOverlay (对齐 RobotUI handleDoubleClick)
+        if (now - last_click_time > 150 && now - last_click_time < 600) {
+            ESP_LOGI(TAG, "双击 → 切换菜单");
+            if (menu_shown) {
+                _menu_close_cb(NULL);
+            } else {
+                _create_menu_overlay();
+            }
             last_click_time = 0;
         } else {
             last_click_time = now;
@@ -148,50 +147,56 @@ static void _screen_face_click_cb(lv_event_t *e)
     }
 }
 
-// ========== Menu 浮层 - 对齐原型 ==========
-static void _menu_item_wifi_cb(lv_event_t *e)
-{
-    _menu_close_cb(NULL);
-    if (wifi_get_state() == WIFI_CONNECTED) {
-        expression_set(EXPR_HAPPY, true);
-    } else {
-        // 显示 QR 码界面并启动 AP
-        qrcode_create(lv_screen_active());
-        expression_set_drawing_enabled(false);
-        wifi_start_ap_config();
-    }
-}
+// ========== v6.0 MenuOverlay (6扇区, 对齐 menuall.jpg 设计) ==========
+#define RM_R  72
+#define RM_BTN 52
+static lv_obj_t *settings_panel = NULL;
+static lv_obj_t *brightness_val = NULL;
+static lv_obj_t *volume_val = NULL;
+static uint8_t s_bright = 200, s_vol = 100;
 
-static void _menu_brightness_slider_cb(lv_event_t *e)
-{
-    lv_obj_t *slider = (lv_obj_t *)lv_event_get_target(e);
-    current_brightness = (uint8_t)lv_slider_get_value(slider);
-    M5.Display.setBrightness(current_brightness);
-    if (brightness_val_label) {
-        lv_label_set_text_fmt(brightness_val_label, "%d", current_brightness);
-    }
-}
+static void _settings_show(void);
 
-static void _menu_volume_slider_cb(lv_event_t *e)
-{
-    lv_obj_t *slider = (lv_obj_t *)lv_event_get_target(e);
-    current_volume = (uint8_t)lv_slider_get_value(slider);
-    M5.Speaker.setVolume(current_volume);
-    if (volume_val_label) {
-        lv_label_set_text_fmt(volume_val_label, "%d", current_volume);
-    }
-}
+static const struct {
+    const lv_image_dsc_t *icon; const char *label;
+    int ang, idx;
+} v6_items[] = {
+    {&icon_face,  "Face",  -90, 0},
+    {&icon_talk,  "Talk",  -30, 1},
+    {&icon_settings, "Set", 30, 2},
+    {&icon_theme, "Thm",   90, 3},
+    {&icon_ext,   "Ext",  150, 4},
+    {&icon_random,"Rnd",  210, 5},
+};
 
 static void _menu_close_cb(lv_event_t *e)
 {
     if (menu_overlay) {
+        if (settings_panel) { lv_obj_delete(settings_panel); settings_panel = NULL; brightness_val = volume_val = NULL; }
         lv_obj_delete(menu_overlay);
         menu_overlay = NULL;
-        brightness_val_label = NULL;
-        volume_val_label = NULL;
         menu_shown = false;
         expression_set_drawing_enabled(true);
     }
+}
+
+static void _v6_menu_cb(lv_event_t *e)
+{
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    switch (idx) {
+    case 0: expression_set(EXPR_HAPPY, true); break;
+    case 1: expression_set(EXPR_TALKING, true); break;
+    case 2: _settings_show(); return;
+    case 3: {
+        ThemeV3 c = theme_v3_get_current();
+        theme_v3_switch(c == THEME_TECH ? THEME_CHILD : c == THEME_CHILD ? THEME_DEV : THEME_TECH);
+        expression_refresh_theme();
+        break;
+    }
+    case 4: case 5:
+        expression_set((Expression)(EXPR_IDLE+1+(esp_random()%19)), true); break;
+    }
+    _menu_close_cb(NULL);
 }
 
 static void _create_menu_overlay(void)
@@ -200,199 +205,175 @@ static void _create_menu_overlay(void)
     menu_shown = true;
     expression_set_drawing_enabled(false);
 
-    bool is_tech = (theme_v3_get_current() == THEME_TECH);
-    bool is_dev = (theme_v3_get_current() == THEME_DEV);
-    lv_color_t bg = is_tech ? lv_color_hex(0x000000) : is_dev ? lv_color_hex(0x0A0A0A) : lv_color_hex(0xFFFBF0);
-    lv_color_t panel_bg = is_tech ? lv_color_hex(0x18181B) : lv_color_hex(0xFFFEF7);
-    lv_color_t text = is_tech ? lv_color_hex(0xFFFFFF) : lv_color_hex(0x000000);
-    lv_color_t accent = is_tech ? lv_color_hex(0x22D3EE) : is_dev ? lv_color_hex(0x22C55E) : lv_color_hex(0xFF7F50);
-    lv_color_t sub_text = is_tech ? lv_color_hex(0xA1A1AA) : lv_color_hex(0x78716C);
-    lv_color_t item_bg = is_tech ? lv_color_hex(0x27272A) : lv_color_hex(0xFFFBF0);
-    lv_color_t item_border = is_tech ? lv_color_hex(0x083344) : is_dev ? lv_color_hex(0x14532D) : lv_color_hex(0xFDE68A);
+    lv_color_t fg = theme_fg();
 
-    // 全屏遮罩
+    // 纯黑实底 (对齐设计稿 #000000)
     menu_overlay = lv_obj_create(lv_screen_active());
     lv_obj_set_size(menu_overlay, 320, 240);
     lv_obj_set_pos(menu_overlay, 0, 0);
-    lv_obj_set_style_bg_color(menu_overlay, bg, 0);
-    lv_obj_set_style_bg_opa(menu_overlay, LV_OPA_90, 0);
+    lv_obj_set_style_bg_color(menu_overlay, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(menu_overlay, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(menu_overlay, 0, 0);
-    lv_obj_set_style_radius(menu_overlay, 0, 0);
     lv_obj_set_style_pad_all(menu_overlay, 0, 0);
     lv_obj_add_flag(menu_overlay, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(menu_overlay, _menu_close_cb, LV_EVENT_CLICKED, NULL);
 
-    // 面板
-    lv_obj_t *panel = lv_obj_create(menu_overlay);
-    lv_obj_set_size(panel, 288, 208);
-    lv_obj_set_pos(panel, 16, 16);
-    lv_obj_set_style_bg_color(panel, panel_bg, 0);
-    lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(panel, 16, 0);
-    lv_obj_set_style_border_width(panel, 1, 0);
-    lv_obj_set_style_border_color(panel, accent, 0);
-    lv_obj_set_style_border_opa(panel, LV_OPA_30, 0);
-    lv_obj_set_style_pad_all(panel, 12, 0);
-    lv_obj_set_style_layout(panel, LV_LAYOUT_FLEX, 0);
-    lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);
+    int cx = 160, cy = 120;
+    for (int i = 0; i < 6; i++) {
+        float rad = v6_items[i].ang * M_PI / 180.0f;
+        int bx = cx + (int)(cosf(rad) * RM_R) - RM_BTN/2;
+        int by = cy + (int)(sinf(rad) * RM_R) - RM_BTN/2;
 
-    // 标题行：标题 + 关闭按钮
-    lv_obj_t *header = lv_obj_create(panel);
-    lv_obj_set_size(header, 264, 28);
-    lv_obj_set_style_bg_opa(header, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(header, 0, 0);
-    lv_obj_set_style_pad_all(header, 0, 0);
-    lv_obj_set_style_layout(header, LV_LAYOUT_FLEX, 0);
-    lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(header, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        // 外圈发光环
+        lv_obj_t *ring = lv_obj_create(menu_overlay);
+        lv_obj_set_size(ring, RM_BTN+4, RM_BTN+4);
+        lv_obj_set_pos(ring, bx-2, by-2);
+        lv_obj_set_style_radius(ring, (RM_BTN+4)/2, 0);
+        lv_obj_set_style_bg_opa(ring, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_color(ring, fg, 0);
+        lv_obj_set_style_border_width(ring, 1, 0);
+        lv_obj_set_style_border_opa(ring, LV_OPA_40, 0);
+        lv_obj_set_style_shadow_color(ring, fg, 0);
+        lv_obj_set_style_shadow_width(ring, 14, 0);
+        lv_obj_set_style_shadow_opa(ring, LV_OPA_40, 0);
 
-    lv_obj_t *title = lv_label_create(header);
-    lv_label_set_text(title, "Menu");
-    lv_obj_set_style_text_color(title, accent, 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+        // 按钮实体
+        lv_obj_t *btn = lv_obj_create(menu_overlay);
+        lv_obj_set_size(btn, RM_BTN, RM_BTN);
+        lv_obj_set_pos(btn, bx, by);
+        lv_obj_set_style_radius(btn, RM_BTN/2, 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(0x001A24), 0);  // 暗青填充
+        lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(btn, fg, 0);
+        lv_obj_set_style_border_width(btn, 2, 0);
+        lv_obj_set_style_shadow_color(btn, fg, 0);
+        lv_obj_set_style_shadow_width(btn, 8, 0);
+        lv_obj_set_style_shadow_opa(btn, LV_OPA_50, 0);
+        lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(btn, _v6_menu_cb, LV_EVENT_CLICKED, (void*)(intptr_t)v6_items[i].idx);
 
-    lv_obj_t *btn_close = lv_btn_create(header);
-    lv_obj_set_size(btn_close, 24, 24);
-    lv_obj_set_style_radius(btn_close, 12, 0);
-    lv_obj_set_style_bg_color(btn_close, is_tech ? lv_color_hex(0x27272A) : lv_color_hex(0xFEF3C7), 0);
-    lv_obj_set_style_border_width(btn_close, 0, 0);
-    lv_obj_add_event_cb(btn_close, _menu_close_cb, LV_EVENT_CLICKED, NULL);
+        // 图标图片 (32x32 RGB565)
+        lv_obj_t *icon_img = lv_image_create(btn);
+        lv_image_set_src(icon_img, v6_items[i].icon);
+        lv_obj_align(icon_img, LV_ALIGN_CENTER, 0, 0);
 
-    lv_obj_t *x_label = lv_label_create(btn_close);
-    lv_label_set_text(x_label, "X");
-    lv_obj_center(x_label);
-    lv_obj_set_style_text_color(x_label, accent, 0);
-
-    lv_obj_set_style_pad_bottom(header, 8, 0);
-
-    // 分隔线
-    lv_obj_t *sep = lv_obj_create(panel);
-    lv_obj_set_size(sep, 264, 1);
-    lv_obj_set_style_bg_color(sep, accent, 0);
-    lv_obj_set_style_bg_opa(sep, LV_OPA_20, 0);
-    lv_obj_set_style_border_width(sep, 0, 0);
-    lv_obj_set_style_pad_all(sep, 0, 0);
-    lv_obj_set_style_margin_bottom(sep, 8, 0);
-
-    // === 菜单项：WiFi 设置 ===
-    lv_obj_t *item_wifi = lv_btn_create(panel);
-    lv_obj_set_size(item_wifi, 264, 36);
-    lv_obj_set_style_radius(item_wifi, 8, 0);
-    lv_obj_set_style_bg_color(item_wifi, item_bg, 0);
-    lv_obj_set_style_border_width(item_wifi, 1, 0);
-    lv_obj_set_style_border_color(item_wifi, item_border, 0);
-    lv_obj_set_style_border_opa(item_wifi, LV_OPA_50, 0);
-    lv_obj_set_style_pad_left(item_wifi, 10, 0);
-    lv_obj_set_style_pad_right(item_wifi, 10, 0);
-    lv_obj_add_event_cb(item_wifi, _menu_item_wifi_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *wifi_label = lv_label_create(item_wifi);
-    if (wifi_get_state() == WIFI_CONNECTED) {
-        lv_label_set_text_fmt(wifi_label, "WiFi  %s", wifi_get_ssid());
-    } else {
-        lv_label_set_text(wifi_label, "WiFi  Not connected");
+        // 标签文字 (按钮下方)
+        lv_obj_t *label_l = lv_label_create(menu_overlay);
+        lv_label_set_text(label_l, v6_items[i].label);
+        lv_obj_set_style_text_color(label_l, fg, 0);
+        lv_obj_set_style_text_font(label_l, &lv_font_montserrat_14, 0);
+        lv_obj_set_pos(label_l, bx + RM_BTN/2 - 12, by + RM_BTN + 2);
     }
-    lv_obj_set_style_text_color(wifi_label, text, 0);
-    lv_obj_center(wifi_label);
 
-    // === 菜单项：亮度 ===
-    lv_obj_t *item_bright = lv_btn_create(panel);
-    lv_obj_set_size(item_bright, 264, 36);
-    lv_obj_set_style_radius(item_bright, 8, 0);
-    lv_obj_set_style_bg_color(item_bright, item_bg, 0);
-    lv_obj_set_style_border_width(item_bright, 1, 0);
-    lv_obj_set_style_border_color(item_bright, item_border, 0);
-    lv_obj_set_style_border_opa(item_bright, LV_OPA_50, 0);
-    lv_obj_set_style_pad_all(item_bright, 4, 0);
-    lv_obj_set_style_layout(item_bright, LV_LAYOUT_FLEX, 0);
-    lv_obj_set_flex_flow(item_bright, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(item_bright, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_add_flag(item_bright, LV_OBJ_FLAG_CLICKABLE);
-
-    lv_obj_t *bright_lbl = lv_label_create(item_bright);
-    lv_label_set_text(bright_lbl, "Bright");
-    lv_obj_set_style_text_color(bright_lbl, text, 0);
-    lv_obj_set_style_pad_left(bright_lbl, 10, 0);
-
-    lv_obj_t *bright_row = lv_obj_create(item_bright);
-    lv_obj_set_size(bright_row, 180, 28);
-    lv_obj_set_style_bg_opa(bright_row, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(bright_row, 0, 0);
-    lv_obj_set_style_pad_all(bright_row, 0, 0);
-    lv_obj_set_style_layout(bright_row, LV_LAYOUT_FLEX, 0);
-    lv_obj_set_flex_flow(bright_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(bright_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    lv_obj_t *bright_slider = lv_slider_create(bright_row);
-    lv_obj_set_width(bright_slider, 140);
-    lv_slider_set_range(bright_slider, 10, 255);
-    lv_slider_set_value(bright_slider, current_brightness, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(bright_slider, accent, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(bright_slider, lv_color_hex(0x3F3F46), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(bright_slider, accent, LV_PART_KNOB);
-    lv_obj_add_event_cb(bright_slider, _menu_brightness_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-    brightness_val_label = lv_label_create(bright_row);
-    lv_label_set_text_fmt(brightness_val_label, "%d", current_brightness);
-    lv_obj_set_style_text_color(brightness_val_label, sub_text, 0);
-    lv_obj_set_width(brightness_val_label, 36);
-    lv_obj_set_style_text_align(brightness_val_label, LV_TEXT_ALIGN_RIGHT, 0);
-
-    // === 菜单项：音量 ===
-    lv_obj_t *item_vol = lv_btn_create(panel);
-    lv_obj_set_size(item_vol, 264, 36);
-    lv_obj_set_style_radius(item_vol, 8, 0);
-    lv_obj_set_style_bg_color(item_vol, item_bg, 0);
-    lv_obj_set_style_border_width(item_vol, 1, 0);
-    lv_obj_set_style_border_color(item_vol, item_border, 0);
-    lv_obj_set_style_border_opa(item_vol, LV_OPA_50, 0);
-    lv_obj_set_style_pad_all(item_vol, 4, 0);
-    lv_obj_set_style_layout(item_vol, LV_LAYOUT_FLEX, 0);
-    lv_obj_set_flex_flow(item_vol, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(item_vol, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_add_flag(item_vol, LV_OBJ_FLAG_CLICKABLE);
-
-    lv_obj_t *vol_lbl = lv_label_create(item_vol);
-    lv_label_set_text(vol_lbl, "Volume");
-    lv_obj_set_style_text_color(vol_lbl, text, 0);
-    lv_obj_set_style_pad_left(vol_lbl, 10, 0);
-
-    lv_obj_t *vol_row = lv_obj_create(item_vol);
-    lv_obj_set_size(vol_row, 180, 28);
-    lv_obj_set_style_bg_opa(vol_row, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(vol_row, 0, 0);
-    lv_obj_set_style_pad_all(vol_row, 0, 0);
-    lv_obj_set_style_layout(vol_row, LV_LAYOUT_FLEX, 0);
-    lv_obj_set_flex_flow(vol_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(vol_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    lv_obj_t *vol_slider = lv_slider_create(vol_row);
-    lv_obj_set_width(vol_slider, 140);
-    lv_slider_set_range(vol_slider, 0, 255);
-    lv_slider_set_value(vol_slider, current_volume, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(vol_slider, accent, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(vol_slider, lv_color_hex(0x3F3F46), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(vol_slider, accent, LV_PART_KNOB);
-    lv_obj_add_event_cb(vol_slider, _menu_volume_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-    volume_val_label = lv_label_create(vol_row);
-    lv_label_set_text_fmt(volume_val_label, "%d", current_volume);
-    lv_obj_set_style_text_color(volume_val_label, sub_text, 0);
-    lv_obj_set_width(volume_val_label, 36);
-    lv_obj_set_style_text_align(volume_val_label, LV_TEXT_ALIGN_RIGHT, 0);
-
-    // === 关于 ===
-    lv_obj_set_style_pad_top(panel, 4, 0);
-    lv_obj_t *about = lv_label_create(panel);
-    lv_label_set_text(about, "xiaoBan Mini V3.9  M5Stack CoreS3");
-    lv_obj_set_style_text_color(about, sub_text, 0);
-    lv_obj_set_style_text_font(about, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_align(about, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_pad_top(about, 8, 0);
-
-    ESP_LOGI(TAG, "Menu V3.9 浮层已打开 - 原型对齐");
+    ESP_LOGI(TAG, "v6.0 Menu: 6扇区 (52px btn, glow ring)");
 }
+
+// ========== 设置子面板 (WiFi / 亮度 / 音量) ==========
+static void _settings_wifi_cb(lv_event_t *e) {
+    if (wifi_get_state() == WIFI_CONNECTED) { expression_set(EXPR_HAPPY, true); }
+    else { qrcode_create(lv_screen_active()); wifi_start_ap_config(); }
+}
+static void _settings_bright_cb(lv_event_t *e) {
+    lv_obj_t *s = (lv_obj_t *)lv_event_get_target(e);
+    s_bright = (uint8_t)lv_slider_get_value(s);
+    M5.Display.setBrightness(s_bright);
+    if (brightness_val) lv_label_set_text_fmt(brightness_val, "%d", s_bright);
+}
+static void _settings_vol_cb(lv_event_t *e) {
+    lv_obj_t *s = (lv_obj_t *)lv_event_get_target(e);
+    s_vol = (uint8_t)lv_slider_get_value(s);
+    M5.Speaker.setVolume(s_vol);
+    if (volume_val) lv_label_set_text_fmt(volume_val, "%d", s_vol);
+}
+static void _settings_close_cb(lv_event_t *e) {
+    if (settings_panel) { lv_obj_delete(settings_panel); settings_panel = NULL; brightness_val = volume_val = NULL; }
+}
+
+static void _settings_show(void) {
+    if (settings_panel) return;
+    bool is_tech = (theme_v3_get_current() == THEME_TECH);
+    bool is_dev  = (theme_v3_get_current() == THEME_DEV);
+    lv_color_t bg = is_tech ? lv_color_hex(0x18181B) : is_dev ? lv_color_hex(0x0F1F0F) : lv_color_hex(0xFFFEF7);
+    lv_color_t fg = theme_fg();
+    lv_color_t accent = is_tech ? lv_color_hex(0x22D3EE) : is_dev ? lv_color_hex(0x22C55E) : lv_color_hex(0xFF7F50);
+    lv_color_t txt = is_tech ? lv_color_hex(0xFFFFFF) : lv_color_hex(0x000000);
+
+    settings_panel = lv_obj_create(menu_overlay);
+    lv_obj_set_size(settings_panel, 240, 170);
+    lv_obj_set_pos(settings_panel, 40, 35);
+    lv_obj_set_style_bg_color(settings_panel, bg, 0);
+    lv_obj_set_style_bg_opa(settings_panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(settings_panel, 12, 0);
+    lv_obj_set_style_border_color(settings_panel, accent, 0);
+    lv_obj_set_style_border_width(settings_panel, 2, 0);
+    lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *t = lv_label_create(settings_panel);
+    lv_label_set_text(t, "Settings");
+    lv_obj_set_style_text_color(t, accent, 0);
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_14, 0);
+    lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 4);
+
+    lv_obj_t *wifi = lv_btn_create(settings_panel);
+    lv_obj_set_size(wifi, 220, 30);
+    lv_obj_set_style_radius(wifi, 6, 0);
+    lv_obj_set_style_bg_color(wifi, bg, 0);
+    lv_obj_align_to(wifi, t, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
+    lv_obj_add_event_cb(wifi, _settings_wifi_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *wl = lv_label_create(wifi);
+    lv_label_set_text(wl, wifi_get_state() == WIFI_CONNECTED ? "WiFi Connected" : "WiFi Setup");
+    lv_obj_set_style_text_color(wl, txt, 0);
+    lv_obj_set_style_text_font(wl, &lv_font_montserrat_14, 0);
+    lv_obj_center(wl);
+
+    lv_obj_t *bl = lv_label_create(settings_panel);
+    lv_label_set_text(bl, "Brightness");
+    lv_obj_set_style_text_color(bl, txt, 0);
+    lv_obj_set_style_text_font(bl, &lv_font_montserrat_14, 0);
+    lv_obj_align_to(bl, wifi, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
+
+    lv_obj_t *bs = lv_slider_create(settings_panel);
+    lv_obj_set_width(bs, 150);
+    lv_slider_set_range(bs, 10, 255);
+    lv_slider_set_value(bs, s_bright, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(bs, accent, LV_PART_INDICATOR);
+    lv_obj_align_to(bs, bl, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
+    lv_obj_add_event_cb(bs, _settings_bright_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    brightness_val = lv_label_create(settings_panel);
+    lv_label_set_text_fmt(brightness_val, "%d", s_bright);
+    lv_obj_set_style_text_color(brightness_val, txt, 0);
+    lv_obj_align_to(brightness_val, bs, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+
+    lv_obj_t *vl = lv_label_create(settings_panel);
+    lv_label_set_text(vl, "Volume");
+    lv_obj_set_style_text_color(vl, txt, 0);
+    lv_obj_set_style_text_font(vl, &lv_font_montserrat_14, 0);
+    lv_obj_align_to(vl, bs, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
+
+    lv_obj_t *vs = lv_slider_create(settings_panel);
+    lv_obj_set_width(vs, 150);
+    lv_slider_set_range(vs, 0, 255);
+    lv_slider_set_value(vs, s_vol, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(vs, accent, LV_PART_INDICATOR);
+    lv_obj_align_to(vs, vl, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 2);
+    lv_obj_add_event_cb(vs, _settings_vol_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    volume_val = lv_label_create(settings_panel);
+    lv_label_set_text_fmt(volume_val, "%d", s_vol);
+    lv_obj_set_style_text_color(volume_val, txt, 0);
+    lv_obj_align_to(volume_val, vs, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+
+    lv_obj_t *cls = lv_btn_create(settings_panel);
+    lv_obj_set_size(cls, 50, 24);
+    lv_obj_set_style_radius(cls, 12, 0);
+    lv_obj_set_style_bg_color(cls, accent, 0);
+    lv_obj_align(cls, LV_ALIGN_BOTTOM_MID, 0, -4);
+    lv_obj_add_event_cb(cls, _settings_close_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *cl = lv_label_create(cls);
+    lv_label_set_text(cl, "OK");
+    lv_obj_set_style_text_color(cl, lv_color_hex(0x000000), 0);
+    lv_obj_center(cl);
+}
+
 
 static void _touch_read_callback(lv_indev_t *indev, lv_indev_data_t *data)
 {
@@ -500,10 +481,9 @@ extern "C" void app_main(void)
     }
     ESP_LOGI(TAG, "face live");
 
-    // v5.0: 不创建 StatusBar (设计稿已移除)
     expression_start_carousel();
 
-    // ✅ 屏幕背景点击事件（替代主循环中的双重 Touch 读取）
+    // 屏幕点击事件
     lv_obj_add_event_cb(lv_screen_active(), _screen_face_click_cb, LV_EVENT_CLICKED, NULL);
 
     // ==============================================

@@ -1,0 +1,4 @@
+## Iteration - v6.0 Major Upgrade: PRD v1.1
+- Logic Changes: Added Perlin noise-based pupil micro-movements to breathing states. Rewrote the Modified Sine Curve logic with Staged Easing using framer-motion keyframes. Re-engineered `wink` expression to correctly execute a single asymmetric wink without endless repeating.
+- UI Changes: Updated Scenario Simulator with complete IMU somatosensory mapping panel and a mocked Memory Data preview section. Added the "Dev" Theme (developer persona with neon green `#22C55E` UI glow).
+- Style Changes: Applied Web Audio API tones and Web Vibration API haptics to the Radial Menu interactions. Reconfigured RGB strip logic to explicitly follow the Modified Sine easing curves defined in the prompt.

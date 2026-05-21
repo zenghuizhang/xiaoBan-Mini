@@ -89,9 +89,11 @@ static void _face_draw_cb(lv_event_t *e)
     int pupil_x = anim_pupil_x;
     int pupil_y = anim_pupil_y;
 
-    // 呼吸值 → scale/opacity 调制 (可见幅度: ±12%)
-    float breath_factor = anim_breath_val / 255.0f;  // 0~1
-    float breath_mod = 1.0f + 0.12f * sinf(breath_factor * 2.0f * M_PI);  // 0.88~1.12
+    // 呼吸值 → scale/opacity (5级呼吸: deep_sleep 5% / light_rest 8% / idle 10% / alert 15% / excited 18%)
+    float breath_factor = anim_breath_val / 255.0f;
+    float breath_amp = (expr == EXPR_DEEP_SLEEP) ? 0.05f : (expr == EXPR_LIGHT_REST) ? 0.08f
+                     : (expr == EXPR_ALERT) ? 0.15f : (expr == EXPR_EXCITED) ? 0.18f : 0.10f;
+    float breath_mod = 1.0f + breath_amp * sinf(breath_factor * 2.0f * M_PI);
 
     switch (expr) {
     case EXPR_IDLE:
@@ -175,6 +177,22 @@ static void _face_draw_cb(lv_event_t *e)
         break;
     case EXPR_MORNING:
         if (blinking) { base_lh = 1; base_rh = 1; }
+        break;
+    // v6.0 新表情
+    case EXPR_THINKING:
+        base_lw = base_rw = 28; base_lh = 32; base_rh = 24;
+        ly_off = -5; ry_off = 0;
+        break;
+    case EXPR_SURPRISED:
+        base_lw = base_rw = 40; base_lh = base_rh = 45;
+        ly_off = ry_off = -10;
+        break;
+    case EXPR_SLEEP_WAKE:
+        base_lw = base_rw = 32; base_lh = base_rh = 10;
+        break;
+    case EXPR_LOST:
+        base_lw = base_rw = 32; base_lh = base_rh = 20;
+        ly_off = ry_off = 10;
         break;
     }
 
@@ -407,6 +425,44 @@ static void _face_draw_cb(lv_event_t *e)
     case EXPR_CELEBRATE:
         _half_mouth(40, 20, 20, -5, 0, true);
         break;
+    case EXPR_THINKING: {
+        int hw = (int)(6*s), hh = (int)(6*s), r = hw;
+        lv_draw_rect_dsc_t dsc;
+        lv_draw_rect_dsc_init(&dsc);
+        dsc.bg_color = mc; dsc.bg_opa = m_opa;
+        dsc.radius = r; dsc.border_width = 0;
+        lv_area_t a;
+        a.x1 = 150 - hw; a.y1 = my + (int)(5*s) - hh;
+        a.x2 = 150 + hw; a.y2 = my + (int)(5*s) + hh;
+        lv_draw_rect(layer, &dsc, &a);
+        break;
+    }
+    case EXPR_SURPRISED: {
+        int hw = (int)(8*s), hh = (int)(10*s), r = (int)(10*s);
+        lv_draw_rect_dsc_t dsc;
+        lv_draw_rect_dsc_init(&dsc);
+        dsc.bg_color = mc; dsc.bg_opa = m_opa;
+        dsc.radius = r; dsc.border_width = 0;
+        lv_area_t a;
+        a.x1 = 160 - hw; a.y1 = my + (int)(15*s) - hh;
+        a.x2 = 160 + hw; a.y2 = my + (int)(15*s) + hh;
+        lv_draw_rect(layer, &dsc, &a);
+        break;
+    }
+    case EXPR_SLEEP_WAKE: {
+        int hw = (int)(8*s), hh = (int)(1*s); if (hh<1) hh=1;
+        lv_draw_rect_dsc_t dsc;
+        lv_draw_rect_dsc_init(&dsc);
+        dsc.bg_color = mc; dsc.bg_opa = m_opa;
+        dsc.radius = 1; dsc.border_width = 0;
+        lv_area_t a;
+        a.x1 = 160 - hw; a.y1 = my - hh; a.x2 = 160 + hw; a.y2 = my + hh;
+        lv_draw_rect(layer, &dsc, &a);
+        break;
+    }
+    case EXPR_LOST:
+        _half_mouth(16, 6, 8, 15, 0, false);
+        break;
     case EXPR_MENU: {
         int hw = (int)(5 * s), hh = (int)(2 * s), r = (int)(2 * s);
         lv_draw_rect_dsc_t dsc;
@@ -599,6 +655,12 @@ static void _start_expression_anims(void)
         break;
     case EXPR_LOOK_AROUND:
         pupil_dur = 3000;  // faster eye movement
+        break;
+    case EXPR_SLEEP_WAKE:
+        pupil_active = false; breath_active = false;
+        break;
+    case EXPR_THINKING:
+        pupil_dur = 6000; breath_dur = 3000;
         break;
     case EXPR_BREATH:
     case EXPR_IDLE:

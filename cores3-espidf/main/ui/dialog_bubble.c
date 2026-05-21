@@ -1,5 +1,6 @@
 /* v5.0 DialogBubble */
 #include "dialog_bubble.h"
+#include "font_zh_14.h"
 #include <esp_log.h>
 
 static lv_obj_t *bubble = NULL;
@@ -41,7 +42,7 @@ lv_obj_t *dialog_bubble_show(lv_obj_t *parent, DialogType type, uint32_t duratio
     lv_obj_t *label = lv_label_create(bubble);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(label, fg, 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(label, &font_zh_14, 0);
     lv_obj_center(label);
 
     if (duration_ms > 0)
