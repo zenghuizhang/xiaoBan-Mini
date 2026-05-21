@@ -5,6 +5,10 @@
 
 static lv_obj_t *bubble = NULL;
 static lv_timer_t *bubble_timer = NULL;
+static bool s_lang_cn = true;
+
+void dialog_bubble_set_lang(bool cn) { s_lang_cn = cn; }
+bool dialog_bubble_get_lang(void) { return s_lang_cn; }
 
 static void _auto_close(lv_timer_t *t)
 {
@@ -20,9 +24,9 @@ lv_obj_t *dialog_bubble_show(lv_obj_t *parent, DialogType type, uint32_t duratio
 
     const char *text = "";
     switch (type) {
-    case DIALOG_MORNING: text = "Good morning!"; break;
-    case DIALOG_SUGGEST: text = "Try naughty face?"; break;
-    case DIALOG_SLEEP:   text = "Time to rest~"; break;
+    case DIALOG_MORNING: text = s_lang_cn ? "早上好呀！" : "Good morning!"; break;
+    case DIALOG_SUGGEST: text = s_lang_cn ? "要不要试试调皮表情？" : "Try a naughty face?"; break;
+    case DIALOG_SLEEP:   text = s_lang_cn ? "该休息了哦~" : "Time to rest~"; break;
     }
 
     lv_color_t bg = is_tech ? lv_color_hex(0x083344) : is_dev ? lv_color_hex(0x14532D) : lv_color_hex(0xFFF5E0);
@@ -42,7 +46,8 @@ lv_obj_t *dialog_bubble_show(lv_obj_t *parent, DialogType type, uint32_t duratio
     lv_obj_t *label = lv_label_create(bubble);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(label, fg, 0);
-    lv_obj_set_style_text_font(label, &font_zh_14, 0);
+    // 中文用 font_zh_14, 英文用 Montserrat
+    lv_obj_set_style_text_font(label, s_lang_cn ? &font_zh_14 : &lv_font_montserrat_14, 0);
     lv_obj_center(label);
 
     if (duration_ms > 0)

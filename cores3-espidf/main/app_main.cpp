@@ -154,19 +154,20 @@ static lv_obj_t *settings_panel = NULL;
 static lv_obj_t *brightness_val = NULL;
 static lv_obj_t *volume_val = NULL;
 static uint8_t s_bright = 200, s_vol = 100;
+static bool s_lang_cn = true;  // true=中文, false=English
 
 static void _settings_show(void);
 
 static const struct {
-    const lv_image_dsc_t *icon; const char *label;
+    const lv_image_dsc_t *icon;
     int ang, idx;
 } v6_items[] = {
-    {&icon_face,  "Face",  -90, 0},
-    {&icon_talk,  "Talk",  -30, 1},
-    {&icon_settings, "Set", 30, 2},
-    {&icon_theme, "Thm",   90, 3},
-    {&icon_ext,   "Ext",  150, 4},
-    {&icon_random,"Rnd",  210, 5},
+    {&icon_face,     -90, 0},
+    {&icon_talk,     -30, 1},
+    {&icon_settings,  30, 2},
+    {&icon_theme,     90, 3},
+    {&icon_ext,     150, 4},
+    {&icon_random,  210, 5},
 };
 
 static void _menu_close_cb(lv_event_t *e)
@@ -252,17 +253,10 @@ static void _create_menu_overlay(void)
         lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(btn, _v6_menu_cb, LV_EVENT_CLICKED, (void*)(intptr_t)v6_items[i].idx);
 
-        // 图标图片 (32x32 RGB565)
+        // 图标图片 (32x32 RGB565, 居中)
         lv_obj_t *icon_img = lv_image_create(btn);
         lv_image_set_src(icon_img, v6_items[i].icon);
-        lv_obj_align(icon_img, LV_ALIGN_CENTER, 0, 0);
-
-        // 标签文字 (按钮下方)
-        lv_obj_t *label_l = lv_label_create(menu_overlay);
-        lv_label_set_text(label_l, v6_items[i].label);
-        lv_obj_set_style_text_color(label_l, fg, 0);
-        lv_obj_set_style_text_font(label_l, &lv_font_montserrat_14, 0);
-        lv_obj_set_pos(label_l, bx + RM_BTN/2 - 12, by + RM_BTN + 2);
+        lv_obj_center(icon_img);
     }
 
     ESP_LOGI(TAG, "v6.0 Menu: 6扇区 (52px btn, glow ring)");
@@ -279,6 +273,14 @@ static void _settings_bright_cb(lv_event_t *e) {
     M5.Display.setBrightness(s_bright);
     if (brightness_val) lv_label_set_text_fmt(brightness_val, "%d", s_bright);
 }
+static void _settings_lang_cb(lv_event_t *e) {
+    s_lang_cn = !s_lang_cn;
+    // 更新按钮文字
+    lv_obj_t *btn = (lv_obj_t *)lv_event_get_target(e);
+    lv_obj_t *lbl = lv_obj_get_child(btn, 0);
+    if (lbl) lv_label_set_text(lbl, s_lang_cn ? "CN" : "EN");
+}
+
 static void _settings_vol_cb(lv_event_t *e) {
     lv_obj_t *s = (lv_obj_t *)lv_event_get_target(e);
     s_vol = (uint8_t)lv_slider_get_value(s);
@@ -325,6 +327,19 @@ static void _settings_show(void) {
     lv_obj_set_style_text_color(wl, txt, 0);
     lv_obj_set_style_text_font(wl, &lv_font_montserrat_14, 0);
     lv_obj_center(wl);
+
+    // 语言切换按钮 (WiFi 按钮右侧)
+    lv_obj_t *lang_btn = lv_btn_create(settings_panel);
+    lv_obj_set_size(lang_btn, 36, 28);
+    lv_obj_set_style_radius(lang_btn, 6, 0);
+    lv_obj_set_style_bg_color(lang_btn, accent, 0);
+    lv_obj_align_to(lang_btn, wifi, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+    lv_obj_add_event_cb(lang_btn, _settings_lang_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lang_lbl = lv_label_create(lang_btn);
+    lv_label_set_text(lang_lbl, s_lang_cn ? "CN" : "EN");
+    lv_obj_set_style_text_color(lang_lbl, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_font(lang_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_center(lang_lbl);
 
     lv_obj_t *bl = lv_label_create(settings_panel);
     lv_label_set_text(bl, "Brightness");
