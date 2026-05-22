@@ -1,8 +1,8 @@
 # xiaoBan-Mini 陪伴机器人 - 开发环境记录
 
-> **最后更新**: 2026-05-20
-> **当前版本**: v5.0 (对齐 桌面机器人UI_完整设计文档_v5.0.md)
-> **状态**: ✅ 核心功能完整，开机动画+Boot+RadialMenu+20表情+3主题+IMU+音频+记忆
+> **最后更新**: 2026-05-22
+> **当前版本**: v6.1 (ESP-IDF 5.5.4 + LVGL 9.5.0)
+> **状态**: ✅ 完整稳定版本，所有功能正常运行
 
 ## 截图系统
 
@@ -31,25 +31,27 @@ python3 tools/capture.py /dev/ttyACM0 /tmp/screen.png
 | 串口 `'e'` | 重新启用截图触发 (持久化到 NVS) |
 | ~~双击~~ | 已移除（避免 UI 卡顿） |
 
-## v5.0 文件结构
+## v6.1 文件结构
 
 ```
 cores3-espidf/main/
 ├── app_main.cpp          # 主入口, UI 层级, 交互逻辑
 ├── CMakeLists.txt        # 编译配置
+├── idf_component.yml     # 组件依赖 (LVGL, M5Unified)
 └── ui/
     ├── theme_v3.h/cpp    # 3主题 (Tech/Child/Dev), scale=1.6
-    ├── expressions.h/cpp # 20种表情 + 呼吸 + 眨眼动画
+    ├── expressions.h/cpp # 20+ 种表情 + 呼吸 + 眨眼动画
     ├── boot_anim.h/c     # 开机动画 (3.5s, 3主题)
-    ├── radial_menu.h/c   # 径向菜单 (6按钮, 双击触发)
+    ├── radial_menu.h/c   # 径向菜单 (6按钮, 按钮A触发)
     ├── dialog_bubble.h/c # 对话气泡 (早安/建议/晚安)
-    ├── audio_feedback.h/cpp  # 音效 (M5.Speaker)
     ├── motion_controller.h/cpp # IMU 体感 (BMI270)
-    ├── robot_memory.h/c  # NVS 记忆 (主题/问候/统计)
+    ├── scenario_overlay.h/c   # 场景叠加层
+    ├── tech_ui.h/c       # 科技风 UI
     ├── wifi_config.h/cpp # WiFi 配网 (AP+DNS劫持+HTTP)
     ├── qrcode.h/c        # QR 码显示 (lv_draw_rect)
-    ├── screenshot.h/c    # 截图回传 (异步 base64)
-    └── font_zh_14.h/c    # 中文字体 (2bpp, Noto Sans SC)
+    ├── font_zh_14.h/c    # 14号中文字体 (2bpp, Noto Sans SC)
+    ├── font_zh_22.h/c    # 22号中文字体
+    └── icons/            # UI 图标资源
 ```
 
 ## v5.0 交互流程
@@ -93,8 +95,9 @@ RadialMenu (6按钮)
 | 粒子特效 | ⏳ ESP32 性能限制 | — |
 
 ## 编译工具
-- **arduino-cli** v1.4.1（不使用 PlatformIO）
-- **ESP-IDF** v5.2.1 — 已安装在 `/home/zzh/esp-idf`
+- **ESP-IDF** v5.5.4 — 已安装在 `/home/zzh/esp-idf`
+- **工具链**: GCC 14.2.0 + GDB 16.3
+- **LVGL**: v9.5.0 (通过组件管理器安装)
 
 ---
 
@@ -103,6 +106,8 @@ RadialMenu (6按钮)
 ### 环境初始化
 ```bash
 # ESP-IDF v5.5.4 — 使用 export.sh 或直接指定 Python
+source /home/zzh/esp-idf/export.sh
+# 或手动设置
 IDF_PATH=/home/zzh/esp-idf
 IDF_PYTHON=/home/zzh/.espressif/python_env/idf5.5_py3.10_env/bin/python
 alias idf.py="$IDF_PYTHON $IDF_PATH/tools/idf.py"
@@ -120,6 +125,20 @@ idf.py -p /dev/ttyACM0 flash
 idf.py clean
 ```
 
+### ⚠️ 分区表配置
+
+**重要**：V6.1 固件约 1.2MB，默认 1MB 分区不够。
+
+已在 `sdkconfig` 中启用：
+```
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+```
+
+**各分区大小**：
+- factory: 1.5MB (0x10000 ~ 0x187000)
+- 固件占用: ~1.2MB
+- 剩余空间: ~300KB
+
 ### 烧录端口
 - **Linux**: `/dev/ttyACM0`
 - 端口自动检测，一般不需要手动指定
@@ -130,7 +149,30 @@ idf.py clean
 
 ---
 
-## Arduino 编译环境（cores3-sketch 项目）
+---
+
+## 📊 ESP-IDF 升级记录 (v6.1)
+
+### 5.2.1 → 5.5.4 升级要点
+
+| 项目 | 变更 |
+|------|------|
+| GCC 版本 | 12.2 → 14.2 |
+| GDB 版本 | 12.1 → 16.3 |
+| 工具链架构 | 芯片独立工具链 → 统一工具链 |
+| 分区表 | SINGLE_APP → SINGLE_APP_LARGE |
+| 固件大小 | ~1.1MB → ~1.2MB |
+
+### 兼容性
+
+✅ **完全兼容零代码修改**
+- LVGL 9.5.0 组件直接使用
+- M5Unified 0.2.13 正常工作
+- 所有现有功能无需调整
+
+---
+
+## ⚠️ Arduino 编译环境（已废弃，仅供参考）
 
 ## ⚠️ 正确的编译指令
 
