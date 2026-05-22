@@ -27,12 +27,12 @@ MotionAction motion_poll(void)
     // Magnitude for shake/tap
     float mag = sqrtf(ax*ax + ay*ay + az*az);
 
-    if (mag > 2.5f) {
-        ESP_LOGI(TAG, "shake! %.2fg", mag);
+    if (mag > 2.0f) {
+        ESP_LOGI(TAG, "shake! %.2fg → dizzy", mag);
         last_detect_ms = now;
         return MOTION_SHAKE;
     }
-    if (mag > 1.5f && mag < 2.0f && fabsf(az) > 1.0f) {
+    if (mag > 1.5f && fabsf(az) > 1.2f) {
         ESP_LOGI(TAG, "tap! z=%.2f", az);
         last_detect_ms = now;
         return MOTION_TAP;

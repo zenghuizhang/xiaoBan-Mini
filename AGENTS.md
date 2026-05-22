@@ -4,15 +4,17 @@
 
 ## 环境初始化
 ```bash
-source /home/zzh/esp-idf/export.sh
+# ESP-IDF v5.5.4
+IDF_PATH=/home/zzh/esp-idf
+IDF_PYTHON=/home/zzh/.espressif/python_env/idf5.5_py3.10_env/bin/python
+alias idf.py="$IDF_PYTHON $IDF_PATH/tools/idf.py"
 cd /home/zzh/.openclaw-autumn/workspace/xiaoBan-Mini/cores3-espidf
 ```
 
 ## 编译与烧录
 ```bash
-idf.py build               # 编译
-idf.py -p /dev/ttyACM0 flash   # 烧录
-idf.py -p /dev/ttyACM0 flash monitor  # 烧录+监视
+idf.py build                            # 编译
+idf.py -p /dev/ttyACM0 flash            # 烧录
 ```
 
 ## 截图系统

@@ -101,31 +101,22 @@ RadialMenu (6按钮)
 ## 🚀 ESP-IDF 编译环境（cores3-espidf 项目）
 
 ### 环境初始化
-每次打开新终端时执行：
 ```bash
-source /home/zzh/esp-idf/export.sh
+# ESP-IDF v5.5.4 — 使用 export.sh 或直接指定 Python
+IDF_PATH=/home/zzh/esp-idf
+IDF_PYTHON=/home/zzh/.espressif/python_env/idf5.5_py3.10_env/bin/python
+alias idf.py="$IDF_PYTHON $IDF_PATH/tools/idf.py"
 ```
 
 ### 编译指令（M5Stack CoreS3）
 ```bash
-cd xiaoBan-Mini/cores3-espidf
-
-# 配置项目（首次或需要修改配置时）
-idf.py menuconfig
+cd /home/zzh/.openclaw-autumn/workspace/xiaoBan-Mini/cores3-espidf
 
 # 编译
 idf.py build
-
-# 编译 + 烧录
-idf.py flash
-
-# 编译 + 烧录 + 监视器
-idf.py flash monitor
-
-# 仅监视器
-idf.py monitor
-
-# 清理构建
+# 烧录
+idf.py -p /dev/ttyACM0 flash
+# 清理
 idf.py clean
 ```
 

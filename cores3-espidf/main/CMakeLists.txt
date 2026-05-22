@@ -15,6 +15,7 @@ idf_component_register(
         "ui/audio_feedback.cpp"
         "ui/robot_memory.c"
         "ui/motion_controller.cpp"
+        "ui/scenario_overlay.c"
         "ui/icons/icon_face.c"
         "ui/icons/icon_talk.c"
         "ui/icons/icon_settings.c"

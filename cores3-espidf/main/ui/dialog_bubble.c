@@ -46,8 +46,8 @@ lv_obj_t *dialog_bubble_show(lv_obj_t *parent, DialogType type, uint32_t duratio
     lv_obj_t *label = lv_label_create(bubble);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(label, fg, 0);
-    // 中文用 font_zh_14, 英文用 Montserrat
-    lv_obj_set_style_text_font(label, s_lang_cn ? &font_zh_14 : &lv_font_montserrat_14, 0);
+    // v6.0: 中文 font_zh_14, 英文 Montserrat
+    lv_obj_set_style_text_font(label, s_lang_cn ? (const lv_font_t*)&font_zh_14 : &lv_font_montserrat_14, 0);
     lv_obj_center(label);
 
     if (duration_ms > 0)

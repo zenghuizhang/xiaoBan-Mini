@@ -17,12 +17,13 @@
 #include <M5Unified.h>
 #include <lvgl.h>
 #include <time.h>
+#include <nvs_flash.h>
 
 #include "ui/theme_v3.h"
 #include "ui/expressions.h"
 #include "ui/interaction.h"
 #include "ui/wifi_config.h"
-#include "ui/font_zh_14.h"
+//#include "ui/font_zh_14.h"
 // #include "ui/screenshot.h"  // 截图已禁用
 #include "ui/qrcode.h"
 #include "ui/boot_anim.h"
@@ -31,7 +32,8 @@
 #include "ui/audio_feedback.h"
 #include "ui/robot_memory.h"
 #include "ui/motion_controller.h"
-#include "ui/icons/icons.h"
+//#include "ui/icons/icons.h"
+//#include "ui/scenario_overlay.h"
 #include "ui/tech_ui.h"
 #include <math.h>
 
@@ -160,15 +162,11 @@ static bool s_lang_cn = true;  // true=中文, false=English
 static void _settings_show(void);
 
 static const struct {
-    const lv_image_dsc_t *icon;
+    const char *letter;
     int ang, idx;
 } v6_items[] = {
-    {&icon_face,     -90, 0},
-    {&icon_talk,     -30, 1},
-    {&icon_settings,  30, 2},
-    {&icon_theme,     90, 3},
-    {&icon_ext,     150, 4},
-    {&icon_random,  210, 5},
+    {"E", -90, 0}, {"D", -30, 1}, {"S", 30, 2},
+    {"T", 90, 3}, {"+", 150, 4}, {"?", 210, 5},
 };
 
 static void _menu_close_cb(lv_event_t *e)
@@ -195,7 +193,10 @@ static void _v6_menu_cb(lv_event_t *e)
         expression_refresh_theme();
         break;
     }
-    case 4: case 5:
+    case 4:  // 扩展 → 场景模拟控制台
+        /*scenario*/ expression_set((Expression)(EXPR_IDLE+1+(esp_random()%19)), true);
+        return;
+    case 5:
         expression_set((Expression)(EXPR_IDLE+1+(esp_random()%19)), true); break;
     }
     _menu_close_cb(NULL);
@@ -254,10 +255,12 @@ static void _create_menu_overlay(void)
         lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(btn, _v6_menu_cb, LV_EVENT_CLICKED, (void*)(intptr_t)v6_items[i].idx);
 
-        // 图标图片 (32x32 RGB565, 居中)
-        lv_obj_t *icon_img = lv_image_create(btn);
-        lv_image_set_src(icon_img, v6_items[i].icon);
-        lv_obj_center(icon_img);
+        // 文字标签 (临时, 直到 icons 编译通过)
+        lv_obj_t *icon_lbl = lv_label_create(btn);
+        lv_label_set_text(icon_lbl, v6_items[i].letter);
+        lv_obj_set_style_text_color(icon_lbl, fg, 0);
+        lv_obj_set_style_text_font(icon_lbl, &lv_font_montserrat_14, 0);
+        lv_obj_center(icon_lbl);
     }
 
     ESP_LOGI(TAG, "v6.0 Menu: 6扇区 (52px btn, glow ring)");
@@ -274,12 +277,76 @@ static void _settings_bright_cb(lv_event_t *e) {
     M5.Display.setBrightness(s_bright);
     if (brightness_val) lv_label_set_text_fmt(brightness_val, "%d", s_bright);
 }
-static void _settings_lang_cb(lv_event_t *e) {
-    s_lang_cn = !s_lang_cn;
-    // 更新按钮文字
-    lv_obj_t *btn = (lv_obj_t *)lv_event_get_target(e);
-    lv_obj_t *lbl = lv_obj_get_child(btn, 0);
-    if (lbl) lv_label_set_text(lbl, s_lang_cn ? "CN" : "EN");
+// 语言选择子界面
+static lv_obj_t *lang_picker = NULL;
+
+static void _lang_pick_cb(lv_event_t *e) {
+    int lang = (int)(intptr_t)lv_event_get_user_data(e);
+    s_lang_cn = (lang == 0);
+    dialog_bubble_set_lang(s_lang_cn);
+    if (lang_picker) { lv_obj_delete(lang_picker); lang_picker = NULL; }
+}
+
+static void _lang_picker_show(void) {
+    if (lang_picker) return;
+    bool is_tech = (theme_v3_get_current() == THEME_TECH);
+    lv_color_t bg = is_tech ? lv_color_hex(0x18181B) : lv_color_hex(0xFFFEF7);
+    lv_color_t accent = theme_fg();
+    lv_color_t txt = is_tech ? lv_color_hex(0xFFFFFF) : lv_color_hex(0x000000);
+
+    lang_picker = lv_obj_create(settings_panel ? (lv_obj_t*)settings_panel : lv_screen_active());
+    lv_obj_set_size(lang_picker, 180, 140);
+    lv_obj_set_pos(lang_picker, 70, 50);
+    lv_obj_set_style_bg_color(lang_picker, bg, 0);
+    lv_obj_set_style_bg_opa(lang_picker, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(lang_picker, 12, 0);
+    lv_obj_set_style_border_color(lang_picker, accent, 0);
+    lv_obj_set_style_border_width(lang_picker, 2, 0);
+    lv_obj_set_style_pad_all(lang_picker, 6, 0);
+    lv_obj_add_flag(lang_picker, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(lang_picker, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *t = lv_label_create(lang_picker);
+    lv_label_set_text(t, "Language");
+    lv_obj_set_style_text_color(t, accent, 0);
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_14, 0);
+    lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 2);
+
+    const char *langs[] = {s_lang_cn ? "> 中文" : "  中文",
+                            s_lang_cn ? "  English" : "> English"};
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *btn = lv_btn_create(lang_picker);
+        lv_obj_set_size(btn, 140, 36);
+        lv_obj_set_style_radius(btn, 6, 0);
+        lv_obj_set_style_bg_color(btn, bg, 0);
+        lv_obj_set_style_bg_opa(btn, (i == (s_lang_cn ? 0 : 1)) ? LV_OPA_30 : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_color(btn, accent, 0);
+        lv_obj_set_style_border_width(btn, 1, 0);
+        lv_obj_set_style_border_opa(btn, (i == (s_lang_cn ? 0 : 1)) ? LV_OPA_COVER : LV_OPA_30, 0);
+        lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, i * 36 + 24);
+        lv_obj_add_event_cb(btn, _lang_pick_cb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        lv_obj_t *lbl = lv_label_create(btn);
+        lv_label_set_text(lbl, langs[i]);
+        lv_obj_set_style_text_color(lbl, accent, 0);
+        // 中文选项用 font_zh_14, English 用 Montserrat
+        lv_obj_set_style_text_font(lbl, i == 0 ? &lv_font_montserrat_14 : &lv_font_montserrat_14, 0);
+        lv_obj_center(lbl);
+    }
+
+    lv_obj_t *cls = lv_btn_create(lang_picker);
+    lv_obj_set_size(cls, 60, 24);
+    lv_obj_set_style_radius(cls, 12, 0);
+    lv_obj_set_style_bg_color(cls, accent, 0);
+    lv_obj_align(cls, LV_ALIGN_BOTTOM_MID, 0, -4);
+    lv_obj_add_event_cb(cls, [](lv_event_t *e){ if(lang_picker){ lv_obj_delete(lang_picker); lang_picker=NULL; }}, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *cl = lv_label_create(cls);
+    lv_label_set_text(cl, "OK");
+    lv_obj_set_style_text_color(cl, lv_color_hex(0x000000), 0);
+    lv_obj_center(cl);
+}
+
+static void _settings_lang_btn_cb(lv_event_t *e) {
+    _lang_picker_show();
 }
 
 static void _settings_vol_cb(lv_event_t *e) {
@@ -302,14 +369,16 @@ static void _settings_show(void) {
     lv_color_t txt = is_tech ? lv_color_hex(0xFFFFFF) : lv_color_hex(0x000000);
 
     settings_panel = lv_obj_create(menu_overlay);
-    lv_obj_set_size(settings_panel, 240, 170);
-    lv_obj_set_pos(settings_panel, 40, 35);
+    lv_obj_set_size(settings_panel, 250, 195);
+    lv_obj_set_pos(settings_panel, 35, 22);
     lv_obj_set_style_bg_color(settings_panel, bg, 0);
     lv_obj_set_style_bg_opa(settings_panel, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(settings_panel, 12, 0);
     lv_obj_set_style_border_color(settings_panel, accent, 0);
     lv_obj_set_style_border_width(settings_panel, 2, 0);
+    lv_obj_set_style_pad_all(settings_panel, 8, 0);
     lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_SCROLLABLE);  // 内容超长可滚动
 
     lv_obj_t *t = lv_label_create(settings_panel);
     lv_label_set_text(t, "Settings");
@@ -329,24 +398,27 @@ static void _settings_show(void) {
     lv_obj_set_style_text_font(wl, &lv_font_montserrat_14, 0);
     lv_obj_center(wl);
 
-    // 语言切换按钮 (WiFi 按钮右侧)
+    // 语言 — 点击弹出选择列表
     lv_obj_t *lang_btn = lv_btn_create(settings_panel);
-    lv_obj_set_size(lang_btn, 36, 28);
+    lv_obj_set_size(lang_btn, 220, 28);
     lv_obj_set_style_radius(lang_btn, 6, 0);
-    lv_obj_set_style_bg_color(lang_btn, accent, 0);
-    lv_obj_align_to(lang_btn, wifi, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
-    lv_obj_add_event_cb(lang_btn, _settings_lang_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_bg_color(lang_btn, bg, 0);
+    lv_obj_set_style_border_color(lang_btn, accent, 0);
+    lv_obj_set_style_border_width(lang_btn, 1, 0);
+    lv_obj_align_to(lang_btn, wifi, LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
+    lv_obj_add_event_cb(lang_btn, _settings_lang_btn_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lang_lbl = lv_label_create(lang_btn);
-    lv_label_set_text(lang_lbl, s_lang_cn ? "CN" : "EN");
-    lv_obj_set_style_text_color(lang_lbl, lv_color_hex(0x000000), 0);
+    lv_label_set_text_fmt(lang_lbl, "Language: %s", s_lang_cn ? "中文" : "English");
+    lv_obj_set_style_text_color(lang_lbl, txt, 0);
     lv_obj_set_style_text_font(lang_lbl, &lv_font_montserrat_14, 0);
     lv_obj_center(lang_lbl);
 
+    // Brightness — 下一行
     lv_obj_t *bl = lv_label_create(settings_panel);
     lv_label_set_text(bl, "Brightness");
     lv_obj_set_style_text_color(bl, txt, 0);
     lv_obj_set_style_text_font(bl, &lv_font_montserrat_14, 0);
-    lv_obj_align_to(bl, wifi, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
+    lv_obj_align_to(bl, lang_btn, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);
 
     lv_obj_t *bs = lv_slider_create(settings_panel);
     lv_obj_set_width(bs, 150);
@@ -461,7 +533,15 @@ extern "C" void app_main(void)
     lv_obj_add_flag(lv_screen_active(), LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(lv_screen_active(), LV_OBJ_FLAG_SCROLLABLE);
 
-    // 启动各子系统 (截图编译级禁用)
+    // ESP-IDF 5.5: 必须先初始化 NVS
+    esp_err_t nvs_err = nvs_flash_init();
+    if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_flash_erase();
+        nvs_flash_init();
+    }
+    ESP_LOGI(TAG, "NVS init OK (err=%d)", (int)nvs_err);
+
+    // 启动各子系统
     memory_init();
     audio_init();
     motion_init();
@@ -495,7 +575,7 @@ extern "C" void app_main(void)
         lv_timer_handler();
         vTaskDelay(pdMS_TO_TICKS(5));
     }
-    ESP_LOGI(TAG, "face live");
+    ESP_LOGI(TAG, "face live, Chinese font OK");
 
     expression_start_carousel();
 
@@ -514,10 +594,24 @@ extern "C" void app_main(void)
     // ==============================================
     // 主循环
     // ==============================================
+    static int _loop_cnt = 0;
     while (1) {
         M5.update();
 
+        // 心跳日志 (每 2 秒一次)
+        if (++_loop_cnt % 400 == 0) {
+            ESP_LOGI(TAG, "heartbeat #%d, free heap: %d", _loop_cnt/400,
+                     (int)esp_get_free_heap_size());
+        }
+
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+        // 菜单打开时只刷 LVGL, 跳过所有后台逻辑 (防卡死)
+        if (menu_shown) {
+            lv_timer_handler();
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
 
         // 表情自动恢复
         if (expr_pending && now >= expr_end_time) {
@@ -525,11 +619,11 @@ extern "C" void app_main(void)
             expr_pending = false;
         }
 
-        // 表情轮播
+        // 表情轮播 (暂时禁用——隔离崩溃源)
         expression_process_pending();
 
-        // v5.0: IMU 体感检测
-        MotionAction ma = motion_poll();
+        // v5.0: IMU 体感检测 (暂时禁用——隔离崩溃源)
+        MotionAction ma = MOTION_NONE; // motion_poll();
         if (ma != MOTION_NONE) {
             switch (ma) {
             case MOTION_TILT_FORWARD: expression_set(EXPR_CURIOUS, true); break;
@@ -541,15 +635,15 @@ extern "C" void app_main(void)
             }
         }
 
-        // v5.0: 早安问候检测
-        static bool morning_checked = false;
-        if (!morning_checked && now > 10000) {  // 10s 后检查
-            morning_checked = true;
-            if (memory_should_morning_greet()) {
-                dialog_bubble_show(lv_screen_active(), DIALOG_MORNING, 4000);
-                expression_set(EXPR_MORNING, true);
-            }
-        }
+        // v5.0: 早安问候检测 (暂时禁用)
+        //static bool morning_checked = false;
+        //if (!morning_checked && now > 10000) {
+        //    morning_checked = true;
+        //    if (memory_should_morning_greet()) {
+        //        dialog_bubble_show(lv_screen_active(), DIALOG_MORNING, 4000);
+        //        expression_set(EXPR_MORNING, true);
+        //    }
+        //}
 
         // ✅ LVGL 统一处理触屏输入
         lv_timer_handler();

@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "tech_ui.h"
 #include "font_zh_14.h"
 
@@ -48,7 +49,7 @@ static lv_obj_t *create_icon_btn(lv_obj_t *parent, const char *icon, lv_coord_t 
     
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, icon);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(label, TECH_COLOR_PRIMARY, 0);
     lv_obj_center(label);
     

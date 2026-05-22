@@ -7,6 +7,7 @@
 #include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/timers.h>
+#include <M5Unified.h>
 #include <math.h>
 
 static const char *TAG = "FACE";
@@ -26,7 +27,8 @@ static volatile bool pending_blink = false;
 static volatile bool pending_blink_state = false;
 
 // 动画状态
-static int32_t anim_dizzy_rot = 0;
+static int32_t anim_dizzy_rot = 0;      // 眩晕旋转角度 (0~3600)
+static int32_t anim_dizzy_decel = 0;    // 眩晕减速阶段 (0=不减速)
 static int32_t anim_wink_phase = 0;
 static int32_t anim_pupil_x = 0;
 static int32_t anim_pupil_y = 0;
@@ -34,7 +36,8 @@ static int32_t anim_breath_val = 0;
 static lv_anim_t face_anim;
 static lv_anim_t pupil_anim;
 static lv_anim_t breath_anim;
-static int _anim_tick = 0;  // 降频: 每 6 tick 刷新一次 (~30fps)
+static lv_anim_t dizzy_decel_anim;
+static int _anim_tick = 0;
 static bool face_drawing_enabled = true;
 
 static void _face_draw_cb(lv_event_t *e);
@@ -137,13 +140,14 @@ static void _face_draw_cb(lv_event_t *e)
         base_rh = EYE_H_BASE;
         break;
     case EXPR_WINK:
-        // v5.0: 单次播放关键帧
+        // v6.0: 左眼闭合+上挑, 右眼睁大挑眉 (增强可见度)
         base_lw = anim_wink_phase ? 36 : 32;
-        base_lh = anim_wink_phase ? 2 : 40;
-        ly_off = anim_wink_phase ? 10 : 0;
+        base_lh = anim_wink_phase ? 1 : 40;
+        ly_off = anim_wink_phase ? 14 : 0;
+        pupil_x = anim_wink_phase ? 4 : 0;
         base_rw = anim_wink_phase ? 38 : 32;
-        base_rh = anim_wink_phase ? 50 : 40;
-        ry_off = anim_wink_phase ? -10 : 0;
+        base_rh = anim_wink_phase ? 52 : 40;
+        ry_off = anim_wink_phase ? -14 : 0;
         break;
     case EXPR_BREATH:
         if (blinking) { base_lh = 1; base_rh = 1; }
@@ -151,14 +155,16 @@ static void _face_draw_cb(lv_event_t *e)
         break;
     case EXPR_LOOK_AROUND:
         if (blinking) { base_lh = 1; base_rh = 1; }
-        // x 轴偏移由动画层驱动
+        // x 偏移由 pupil 动画驱动, 幅度加大
+        pupil_x = anim_pupil_x * 3;  // 3x 可见偏移
         break;
     case EXPR_YAWN:
         base_lh = base_rh = 20; ly_off = ry_off = 8;
         break;
     case EXPR_CURIOUS:
         base_lh = 36; base_rh = 28;
-        ly_off = -10; ry_off = -10;
+        ly_off = -15; ry_off = -15;
+        pupil_x = (int)(15 * FACE_SCALE);  // 明显看看右侧
         break;
     case EXPR_ANGRY:
         base_lh = base_rh = 20; base_lw = base_rw = 30;
@@ -211,11 +217,21 @@ static void _face_draw_cb(lv_event_t *e)
     if (expr == EXPR_CRYING) lr = rr = 4;
     if (expr == EXPR_ANGRY) lr = rr = 8;
 
-    // 动态眼距
+    // 动态眼距 + 眩晕旋转偏移
     int gap = (int)(FACE_EYE_GAP * s);
     int total = lw + gap + rw;
     int lx = (320 - total) / 2 + lw / 2 + pupil_x;
     int rx = lx + lw / 2 + gap + rw / 2 + pupil_x;
+
+    // v6.0: 眩晕旋转 (眼睛绕圈)
+    if (expr == EXPR_DIZZY && anim_dizzy_rot != 0) {
+        float rot_rad = anim_dizzy_rot * M_PI / 1800.0f;
+        int ro = (int)(12 * s);  // 旋转半径
+        lx += (int)(cosf(rot_rad) * ro);
+        rx += (int)(cosf(rot_rad) * ro);
+        ey += (int)(sinf(rot_rad) * ro * 0.5f);
+    }
+
 
     // 发光
     _draw_glow(layer, lx, ey + ly_off, lw, lh, lr, fg);
@@ -578,11 +594,32 @@ static void _breath_anim_cb(void *obj, int32_t v)
     if (++_anim_tick % 6 == 0) lv_obj_invalidate(face_container);
 }
 
+// 眩晕减速: 从全速逐渐降到 0
+static void _dizzy_decel_cb(void *obj, int32_t v)
+{
+    anim_dizzy_rot = v;
+    lv_obj_invalidate(face_container);
+}
+
 static void _start_expression_anims(void)
 {
     lv_anim_delete(face_container, _face_anim_cb);
     lv_anim_delete(face_container, _pupil_anim_cb);
     lv_anim_delete(face_container, _breath_anim_cb);
+    lv_anim_delete(face_container, _dizzy_decel_cb);
+
+    // 如果不是 dizzy, 且之前是 dizzy, 做减速动画
+    if (current_expr != EXPR_DIZZY && anim_dizzy_rot > 0) {
+        lv_anim_init(&dizzy_decel_anim);
+        lv_anim_set_var(&dizzy_decel_anim, face_container);
+        lv_anim_set_exec_cb(&dizzy_decel_anim, _dizzy_decel_cb);
+        lv_anim_set_values(&dizzy_decel_anim, anim_dizzy_rot % 3600, 0);
+        lv_anim_set_time(&dizzy_decel_anim, 800);
+        lv_anim_set_path_cb(&dizzy_decel_anim, lv_anim_path_ease_out);
+        lv_anim_start(&dizzy_decel_anim);
+    } else if (current_expr != EXPR_DIZZY) {
+        anim_dizzy_rot = 0;
+    }
 
     // 瞳孔微动: 大部分状态都启用
     bool pupil_active = true;
