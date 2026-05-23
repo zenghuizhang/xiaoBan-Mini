@@ -18,7 +18,9 @@ typedef enum {
     EXPR_NAUGHTY,       // 调皮 - 单眼+歪嘴
     EXPR_WINK,          // 眨眼笑 (单次播放)
     EXPR_BREATH,        // 呼吸 (scale/opacity 脉冲)
-    EXPR_LOOK_AROUND,   // 张望 (x 轴漂移)
+    EXPR_LOOK_AROUND,   // 张望 (兼容旧)
+    EXPR_LOOK_LEFT,     // v6.1: 左看 (roll>15 → 眼右移)
+    EXPR_LOOK_RIGHT,    // v6.1: 右看 (roll<-15 → 眼左移)
     EXPR_YAWN,          // 哈欠 (半闭眼+大圆嘴)
     EXPR_CURIOUS,       // 好奇 (睁大眼看侧面)
     EXPR_ANGRY,         // 生气 (眯眼+直线嘴)

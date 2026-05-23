@@ -1,0 +1,13 @@
+# M5Stack CoreS3 Companion Robot UI
+- Resolution: 320x240
+- Theme: Dark mode (black background, glowing elements)
+- Features:
+  - Status Bar: Time, WiFi, Battery
+  - Main Area: Animated robot face (Idle, Happy, Talking, Sad)
+  - Bottom Bar: Interaction buttons (Menu, Talk, Play)
+  - Menu Overlay: Settings and actions
+- Routing:
+  - `/?state=idle` (Default)
+  - `/?state=happy`
+  - `/?state=talking`
+  - `/?state=menu`

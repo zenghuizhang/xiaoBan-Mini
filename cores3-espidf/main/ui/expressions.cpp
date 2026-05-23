@@ -96,7 +96,10 @@ static void _face_draw_cb(lv_event_t *e)
     float breath_factor = anim_breath_val / 255.0f;
     float breath_amp = (expr == EXPR_DEEP_SLEEP) ? 0.05f : (expr == EXPR_LIGHT_REST) ? 0.08f
                      : (expr == EXPR_ALERT) ? 0.15f : (expr == EXPR_EXCITED) ? 0.18f : 0.10f;
-    float breath_mod = 1.0f + breath_amp * sinf(breath_factor * 2.0f * M_PI);
+    // cubic-eased breathing: 更自然, 吸气快->呼气慢
+    float raw = sinf(breath_factor * 2.0f * M_PI);
+    float eased = raw * raw * raw;  // cubic: 平滑缓动
+    float breath_mod = 1.0f + breath_amp * eased;
 
     switch (expr) {
     case EXPR_IDLE:
@@ -153,18 +156,26 @@ static void _face_draw_cb(lv_event_t *e)
         if (blinking) { base_lh = 1; base_rh = 1; }
         breath_scale = 0.97f; breath_opa = 0.7f;
         break;
+    case EXPR_LOOK_LEFT:   // v6.1: 倾斜左→眼睛看右
+        if (blinking) { base_lh = 1; base_rh = 1; }
+        pupil_x = 20;  // 向右看
+        break;
+    case EXPR_LOOK_RIGHT:  // v6.1: 倾斜右→眼睛看左
+        if (blinking) { base_lh = 1; base_rh = 1; }
+        pupil_x = -20;  // 向左看
+        break;
     case EXPR_LOOK_AROUND:
         if (blinking) { base_lh = 1; base_rh = 1; }
-        // x 偏移由 pupil 动画驱动, 幅度加大
-        pupil_x = anim_pupil_x * 3;  // 3x 可见偏移
+        pupil_x = anim_pupil_x * 3;
         break;
     case EXPR_YAWN:
         base_lh = base_rh = 20; ly_off = ry_off = 8;
         break;
     case EXPR_CURIOUS:
-        base_lh = 36; base_rh = 28;
-        ly_off = -15; ry_off = -15;
-        pupil_x = (int)(15 * FACE_SCALE);  // 明显看看右侧
+        // v6.1: 左眼36x32,x:-10,y:-10,rot:10  右眼40x36,x:-10,y:-15,rot:10
+        base_lw = 32; base_lh = 36; ly_off = -10;  // 左眼
+        base_rw = 36; base_rh = 40; ry_off = -15;  // 右眼更大
+        pupil_x = -16;  // 看左上
         break;
     case EXPR_ANGRY:
         base_lh = base_rh = 20; base_lw = base_rw = 30;
@@ -197,8 +208,9 @@ static void _face_draw_cb(lv_event_t *e)
         base_lw = base_rw = 32; base_lh = base_rh = 10;
         break;
     case EXPR_LOST:
+        // v6.1: height 20, width 32, borderRadius 16 16 4 4, y:10, rotate: -15/15
         base_lw = base_rw = 32; base_lh = base_rh = 20;
-        ly_off = ry_off = 10;
+        ly_off = 16; ry_off = 16;
         break;
     }
 
@@ -396,6 +408,8 @@ static void _face_draw_cb(lv_event_t *e)
                     24, anim_wink_phase ? -10 : 0,
                     anim_wink_phase ? 6 : 0, true);
         break;
+    case EXPR_LOOK_LEFT:
+    case EXPR_LOOK_RIGHT:
     case EXPR_LOOK_AROUND:
     case EXPR_CURIOUS: {
         int hw = (int)(10 * s), hh = (int)(2 * s + 0.5f);

@@ -11,10 +11,14 @@ typedef enum {
     DIALOG_MORNING,   // 早安问候
     DIALOG_SUGGEST,   // 表情建议
     DIALOG_SLEEP,     // 晚安提示
+    DIALOG_CUSTOM,    // 自定义文本
 } DialogType;
 
 /** 显示对话气泡, duration_ms 后自动关闭 (0=手动关闭) */
 lv_obj_t *dialog_bubble_show(lv_obj_t *parent, DialogType type, uint32_t duration_ms);
+
+/** 显示自定义文本气泡 (中/英) */
+lv_obj_t *dialog_bubble_show_text(lv_obj_t *parent, const char *cn, const char *en, uint32_t duration_ms);
 
 /** 关闭对话气泡 */
 void dialog_bubble_close(void);

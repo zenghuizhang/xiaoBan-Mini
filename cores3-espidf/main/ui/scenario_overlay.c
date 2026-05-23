@@ -10,20 +10,20 @@ static const char *TAG = "SCENARIO";
 static lv_obj_t *s_overlay = NULL;
 static void (*s_on_close)(void) = NULL;
 
-typedef struct { const char *label; Expression expr; DialogType dialog; } Scenario;
+typedef struct { const char *label; Expression expr; const char *cn; const char *en; } Scenario;
 static const Scenario scenarios[] = {
-    {"Morning",  EXPR_SLEEP_WAKE, DIALOG_MORNING},
-    {"Suggest",  EXPR_IDLE,       DIALOG_SUGGEST},
-    {"Sleep",    EXPR_YAWN,       DIALOG_SLEEP},
-    {"Reward",   EXPR_CELEBRATE,  DIALOG_MORNING},   // reuse type, show OK
-    {"Angry",    EXPR_ANGRY,      DIALOG_MORNING},
-    {"Lonely",   EXPR_LOST,       DIALOG_SUGGEST},
-    {"Celebrate",EXPR_CELEBRATE,  DIALOG_MORNING},
-    {"Excited",  EXPR_EXCITED,    DIALOG_MORNING},
-    {"Curious",  EXPR_CURIOUS,    DIALOG_MORNING},
-    {"Thinking", EXPR_THINKING,   DIALOG_MORNING},
-    {"Surprised",EXPR_SURPRISED,  DIALOG_MORNING},
-    {"Sad",      EXPR_SAD,        DIALOG_MORNING},
+    {"Morning",  EXPR_SLEEP_WAKE, "早上好呀！", "Good morning!"},
+    {"Suggest",  EXPR_IDLE,       "要不要试试调皮表情？", "Try a naughty face?"},
+    {"Sleep",    EXPR_YAWN,       "该休息了哦~", "Time to rest~"},
+    {"Reward",   EXPR_CELEBRATE,  "太棒了！继续加油！", "Awesome! Keep it up!"},
+    {"Angry",    EXPR_ANGRY,      "哼！生气了！", "Hmph！I'm angry!"},
+    {"Lonely",   EXPR_LOST,       "好无聊哦，陪我玩吧...", "So bored, play with me..."},
+    {"Celebrate",EXPR_CELEBRATE,  "庆祝一下！", "Let's celebrate!"},
+    {"Excited",  EXPR_EXCITED,    "太兴奋了！", "So excited!"},
+    {"Curious",  EXPR_CURIOUS,    "嗯？那是什么？", "Hmm？What's that?"},
+    {"Thinking", EXPR_THINKING,   "让我想想...", "Let me think..."},
+    {"Surprised",EXPR_SURPRISED,  "哇！真的吗？", "Wow！Really?"},
+    {"Sad",      EXPR_SAD,        "有点难过...", "A bit sad..."},
 };
 #define SC_COUNT (sizeof(scenarios)/sizeof(scenarios[0]))
 
@@ -37,11 +37,15 @@ static void _sc_cb(lv_event_t *e)
 {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
     if (idx < 0 || idx >= (int)SC_COUNT) return;
-    // 先关 overlay, 在面部显示表情+气泡
+    // 1. 关 scenario overlay
     scenario_overlay_close();
+    // 2. 关父级 menu overlay + 恢复面部绘制
     if (s_on_close) s_on_close();
+    // 3. 在面部切换表情
+    expression_set_drawing_enabled(true);
     expression_set(scenarios[idx].expr, true);
-    dialog_bubble_show(lv_screen_active(), scenarios[idx].dialog, 3000);
+    // 4. 显示对话气泡 (自定义文本)
+    dialog_bubble_show_text(lv_screen_active(), scenarios[idx].cn, scenarios[idx].en, 3000);
 }
 
 lv_obj_t *scenario_overlay_create(lv_obj_t *parent, void (*on_close)(void))

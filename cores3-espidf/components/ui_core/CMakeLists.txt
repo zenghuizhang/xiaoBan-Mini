@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS
+        "event_bus.c"
+        "breathing.c"
+    INCLUDE_DIRS
+        "include"
+        "../../main/ui"
+    REQUIRES
+        "lvgl"
+        "m5unified"
+)
