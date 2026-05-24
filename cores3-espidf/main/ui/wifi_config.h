@@ -85,6 +85,11 @@ void wifi_hide_config_ui(void);
  */
 const char* wifi_get_status_icon(void);
 
+/**
+ * 主线程调用: 处理延迟的 UI 更新 (线程安全)
+ */
+void wifi_process_pending_ui(void);
+
 #ifdef __cplusplus
 }
 #endif

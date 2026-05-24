@@ -1,0 +1,35 @@
+{
+  "name": "sector-hover",
+  "duration_ms": 150,
+  "loop": false,
+  "tracks": [
+    {
+      "target": "halo",
+      "prop": "scale",
+      "keys": [
+        [
+          0,
+          0.8
+        ],
+        [
+          150,
+          1.4
+        ]
+      ]
+    },
+    {
+      "target": "halo",
+      "prop": "opacity",
+      "keys": [
+        [
+          0,
+          0.6
+        ],
+        [
+          150,
+          0.0
+        ]
+      ]
+    }
+  ]
+}

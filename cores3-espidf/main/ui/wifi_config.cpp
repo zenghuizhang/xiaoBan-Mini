@@ -92,6 +92,10 @@ static httpd_handle_t s_http_server = NULL;
 static esp_netif_t *s_ap_netif = NULL;
 static char s_connecting_ssid[33] = {0};
 static WifiConfigUIStep s_ui_step = WIFI_UI_STEP_AP;
+// 线程安全: LVGL 操作必须延迟到主线程
+static volatile bool s_pending_wifi_ui = false;
+static volatile int  s_pending_wifi_step = 0;
+static volatile bool s_pending_qr_close = false;
 
 // 事件组位定义
 #define WIFI_CONNECTED_BIT BIT0
@@ -251,27 +255,34 @@ static esp_err_t _http_connect_handler(httpd_req_t *req)
     strncpy(s_connecting_ssid, ssid, sizeof(s_connecting_ssid) - 1);
     s_connecting_ssid[sizeof(s_connecting_ssid) - 1] = '\0';
 
-    // V3.9: 更新UI状态到"连接中"步骤
-    s_wifi_state = WIFI_CONFIG_AP_CONNECTING;
-    s_ui_step = WIFI_UI_STEP_CONNECTING;
-    wifi_show_config_ui();
-    expression_set(EXPR_DIZZY, true);
-
-    // 停止AP，切换到STA模式
-    wifi_config_t wifi_config = {0};
-    memcpy(wifi_config.sta.ssid, ssid, strlen(ssid));
-    memcpy(wifi_config.sta.password, password, strlen(password));
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_connect());
-
+    // 先发 HTTP 响应 (AP 还在, 手机能收到)
     const char *resp = "{\"success\":true,\"message\":\"正在连接WiFi\"}";
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, resp, strlen(resp));
 
-    // 通知任务配网完成
+    // 延迟到主线程: 关闭 QR + 更新 WiFi 页面到连接中
+    s_pending_qr_close = true;
+    s_pending_wifi_step = 1;  // connecting
+    s_pending_wifi_ui = true;
+    s_wifi_state = WIFI_CONFIG_AP_CONNECTING;
+
+    // 保存凭据用于连接
+    strncpy(s_connecting_ssid, ssid, sizeof(s_connecting_ssid) - 1);
+    s_connecting_ssid[sizeof(s_connecting_ssid) - 1] = '\0';
+
+    // 通知配网任务
     xEventGroupSetBits(s_wifi_event_group, WIFI_AP_PROVISIONING_DONE_BIT);
+
+    // 延迟切换: 等 HTTP 响应发完再关 AP
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    // 切换到 STA 模式连接目标 WiFi
+    wifi_config_t wifi_config = {0};
+    memcpy(wifi_config.sta.ssid, ssid, strlen(ssid));
+    memcpy(wifi_config.sta.password, password, strlen(password));
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    esp_wifi_connect();
 
     return ESP_OK;
 }
@@ -449,19 +460,24 @@ static void _wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t 
                 strncpy(s_connected_ssid, (char*)event->ssid, sizeof(s_connected_ssid) - 1);
                 s_connected_ssid[sizeof(s_connected_ssid) - 1] = '\0';
                 ESP_LOGI(TAG, "WiFi 已连接: %s", s_connected_ssid);
+                // 延迟到主线程更新 UI
+                if (s_wifi_ui) {
+                    s_pending_wifi_step = 1;
+                    s_pending_wifi_ui = true;
+                }
                 break;
             }
 
             case WIFI_EVENT_STA_DISCONNECTED: {
                 s_wifi_state = WIFI_DISCONNECTED;
                 ESP_LOGI(TAG, "WiFi 断开连接");
-                // V3.9: 配网流程 - 连接失败步骤
                 if (s_wifi_ui && s_ui_step == WIFI_UI_STEP_CONNECTING) {
-                    s_ui_step = WIFI_UI_STEP_ERROR;
-                    wifi_show_config_ui();
+                    s_pending_qr_close = true;
+                    s_pending_wifi_step = 3;  // error
+                    s_pending_wifi_ui = true;
                 } else if (s_ap_task_handle == NULL) {
                     s_connected_ssid[0] = '\0';
-                    esp_wifi_connect();  // 非配网模式下自动重连
+                    esp_wifi_connect();
                 }
                 break;
             }
@@ -471,9 +487,6 @@ static void _wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t 
                 ESP_LOGI(TAG, "设备接入热点: %02x:%02x:%02x:%02x:%02x:%02x",
                          event->mac[0], event->mac[1], event->mac[2],
                          event->mac[3], event->mac[4], event->mac[5]);
-                if (s_status_label) {
-                    lv_label_set_text(s_status_label, "📱 设备已连接\n正在打开配网页面...");
-                }
                 break;
             }
         }
@@ -486,18 +499,12 @@ static void _wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t 
             s_wifi_state = WIFI_CONNECTED;
             xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 
-            // V3.9: 配网流程 - 连接成功步骤
+            // 延迟到主线程: 关闭 QR, 显示成功
+            s_pending_qr_close = true;
             if (s_wifi_ui && s_ui_step != WIFI_UI_STEP_SUCCESS) {
-                s_ui_step = WIFI_UI_STEP_SUCCESS;
-                wifi_show_config_ui();
-            } else if (s_status_label) {
-                char buf[128];
-                snprintf(buf, sizeof(buf), "Connected: %s", s_connected_ssid);
-                lv_label_set_text(s_status_label, buf);
+                s_pending_wifi_step = 2;  // success
+                s_pending_wifi_ui = true;
             }
-
-            // 成功反馈表情
-            expression_set(EXPR_HAPPY, true);
         }
     }
     // SmartConfig 功能 (需要安装组件后启用)
@@ -657,231 +664,218 @@ const char* wifi_get_status_icon(void)
     }
 }
 
-// ========== WiFi 配置 UI V3.9 - 多步骤流程对齐原型 ==========
+// ========== WiFi 配置 UI V6.2 - 对齐 full_replica page_wifi_ap.c ==========
+#include "xb_widgets.h"
 
-static void _spinner_rotate_cb(void *obj, int32_t val)
+typedef enum { AP_IDLE, AP_CONNECTING, AP_SUCCESS, AP_ERROR } ap_state_t;
+
+typedef struct {
+    lv_obj_t* body;
+    lv_obj_t* page;
+    ap_state_t state;
+} ap_ctx_t;
+
+static ap_ctx_t* s_ap_ctx = NULL;
+
+// 主线程调用: 处理延迟的 UI 操作
+void wifi_process_pending_ui(void)
 {
-    lv_obj_set_style_transform_rotation((lv_obj_t *)obj, val * 10, 0);
-}
-
-static void _btn_close_cb(lv_event_t *e)
-{
-    wifi_stop_ap_config();
-    wifi_hide_config_ui();
-}
-
-static void _btn_retry_cb(lv_event_t *e)
-{
-    // 重试：回到 AP 步骤，但保持当前的 AP 模式
-    s_ui_step = WIFI_UI_STEP_AP;
-    lv_obj_delete(s_wifi_ui);
-    s_wifi_ui = NULL;
-    s_status_label = NULL;
-    wifi_show_config_ui();
-}
-
-static void _btn_done_cb(lv_event_t *e)
-{
-    wifi_hide_config_ui();
-}
-
-// 重建 UI 帮助函数
-static void _wifi_ui_rebuild(void)
-{
-    if (!s_wifi_ui) return;
-
-    lv_obj_t *parent = s_wifi_ui;
-    // 清空所有子对象
-    while (lv_obj_get_child_cnt(parent) > 0) {
-        lv_obj_t *child = lv_obj_get_child(parent, 0);
-        if (child) lv_obj_delete(child);
+    if (s_pending_qr_close) {
+        s_pending_qr_close = false;
+        qrcode_close();
     }
-    s_status_label = NULL;
+    if (s_pending_wifi_ui) {
+        s_pending_wifi_ui = false;
+        s_ui_step = s_pending_wifi_step == 1 ? WIFI_UI_STEP_CONNECTING
+                  : s_pending_wifi_step == 2 ? WIFI_UI_STEP_SUCCESS
+                  : s_pending_wifi_step == 3 ? WIFI_UI_STEP_ERROR
+                  : WIFI_UI_STEP_AP;
+        wifi_show_config_ui();
+    }
+}
+
+static void _qr_fullscreen_cb(lv_event_t* e) {
+    qrcode_create(lv_screen_active());
+}
+
+static void _wifi_render(ap_ctx_t* ctx);
+static void _btn_retry_cb(lv_event_t* e);
+static void _btn_close_cb(lv_event_t* e);
+
+// 关闭 WiFi 页面: 停止 AP, 回到表情界面, 不忘记已有网络
+static void _wifi_stop_ap_and_close(void)
+{
+    if (s_ap_task_handle) {
+        xEventGroupSetBits(s_wifi_event_group, WIFI_AP_PROVISIONING_DONE_BIT);
+        s_ap_task_handle = NULL;
+    }
+    _dns_server_stop();
+    if (s_http_server) { httpd_stop(s_http_server); s_http_server = NULL; }
+    if (s_ap_netif) { esp_netif_destroy(s_ap_netif); s_ap_netif = NULL; }
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    s_wifi_state = WIFI_DISCONNECTED;
+    s_ui_step = WIFI_UI_STEP_AP;
+    wifi_hide_config_ui();
+}
+
+static void _btn_back_cb(lv_event_t* e) { (void)e; _wifi_stop_ap_and_close(); }
+static void _btn_close_cb(lv_event_t* e) { _wifi_stop_ap_and_close(); }
+static void _btn_done_cb(lv_event_t* e) { _wifi_stop_ap_and_close(); }
+
+static void _btn_retry_cb(lv_event_t* e)
+{
+    ap_ctx_t* ctx = s_ap_ctx;  // 用全局指针, 不用 e->user_data (会被 delete 释放)
+    // 停止旧 AP 基础设施 (不删 UI)
+    if (s_ap_task_handle) {
+        xEventGroupSetBits(s_wifi_event_group, WIFI_AP_PROVISIONING_DONE_BIT);
+        s_ap_task_handle = NULL;
+    }
+    _dns_server_stop();
+    if (s_http_server) { httpd_stop(s_http_server); s_http_server = NULL; }
+    if (s_ap_netif) { esp_netif_destroy(s_ap_netif); s_ap_netif = NULL; }
+    s_wifi_state = WIFI_CONFIG_AP_MODE;
+    s_ui_step = WIFI_UI_STEP_AP;
+    // 渲染 IDLE 状态
+    if (ctx) { ctx->state = AP_IDLE; _wifi_render(ctx); }
+    // 重启 AP
+    xEventGroupClearBits(s_wifi_event_group, WIFI_AP_PROVISIONING_DONE_BIT | WIFI_CONNECTED_BIT);
+    xTaskCreate(_ap_config_task, "ap_config", 8192, NULL, 5, &s_ap_task_handle);
+}
+
+// ========== 4-state 渲染 (对齐 page_wifi_ap.c render) ==========
+static void _wifi_render(ap_ctx_t* ctx)
+{
+    lv_color_t fg = theme_fg();
+    lv_obj_clean(ctx->body);
+
+    switch (ctx->state) {
+    case AP_IDLE: {
+        // Card with SSID + QR
+        lv_obj_t* card = xb_card(ctx->body);
+        lv_obj_set_size(card, 280, 130);
+        lv_obj_center(card);
+
+        lv_obj_t* t1 = lv_label_create(card);
+        lv_label_set_text(t1, "Connect to AP:");
+        lv_obj_set_style_text_color(t1, fg, 0);
+        lv_obj_set_style_text_opa(t1, LV_OPA_60, 0);
+        lv_obj_align(t1, LV_ALIGN_TOP_LEFT, 6, 4);
+
+        lv_obj_t* ssid = lv_label_create(card);
+        lv_label_set_text(ssid, AP_SSID);
+        lv_obj_set_style_text_color(ssid, fg, 0);
+        lv_obj_align(ssid, LV_ALIGN_TOP_LEFT, 6, 26);
+
+        lv_obj_t* url = lv_label_create(card);
+        lv_label_set_text(url, "Open  192.168.4.1");
+        lv_obj_set_style_text_color(url, fg, 0);
+        lv_obj_set_style_text_opa(url, LV_OPA_80, 0);
+        lv_obj_align(url, LV_ALIGN_TOP_LEFT, 6, 56);
+
+        // QR 码按钮 — 点击打开全屏 QR
+        lv_obj_t* qr_btn = lv_btn_create(card);
+        lv_obj_set_size(qr_btn, 64, 64);
+        lv_obj_set_style_radius(qr_btn, 4, 0);
+        lv_obj_set_style_bg_color(qr_btn, fg, 0);
+        lv_obj_set_style_shadow_width(qr_btn, 0, 0);
+        lv_obj_align(qr_btn, LV_ALIGN_RIGHT_MID, -8, 0);
+        lv_obj_add_event_cb(qr_btn, _qr_fullscreen_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_t* qr_lb = lv_label_create(qr_btn);
+        lv_label_set_text(qr_lb, "QR");
+        lv_obj_set_style_text_color(qr_lb, theme_bg(), 0);
+        lv_obj_center(qr_lb);
+
+        // Close 按钮
+        lv_obj_t* btn_c = xb_button(ctx->body, "Close", _btn_close_cb);
+        lv_obj_align(btn_c, LV_ALIGN_BOTTOM_MID, 0, -10);
+        break;
+    }
+    case AP_CONNECTING: {
+        lv_obj_t* dots = xb_dot_loading_create(ctx->body);
+        lv_obj_center(dots);
+        lv_obj_t* l = lv_label_create(ctx->body);
+        lv_label_set_text(l, "Joining your network...");
+        lv_obj_set_style_text_color(l, fg, 0);
+        lv_obj_align(l, LV_ALIGN_CENTER, 0, 28);
+        break;
+    }
+    case AP_SUCCESS: {
+        lv_obj_t* check = lv_label_create(ctx->body);
+        lv_label_set_text(check, "OK");
+        lv_obj_set_style_text_color(check, lv_color_hex(0x22C55E), 0);
+        lv_obj_align(check, LV_ALIGN_CENTER, 0, -16);
+        lv_obj_t* l = lv_label_create(ctx->body);
+        lv_label_set_text_fmt(l, "Connected\n%s", s_connected_ssid);
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(0x22C55E), 0);
+        lv_obj_align(l, LV_ALIGN_CENTER, 0, 22);
+        lv_obj_t* btn_d = xb_button(ctx->body, "Done", _btn_done_cb);
+        lv_obj_align(btn_d, LV_ALIGN_BOTTOM_MID, 0, -10);
+        break;
+    }
+    case AP_ERROR: {
+        xb_error_inline(ctx->body, "Auth failed");
+        lv_obj_t* btn_r = xb_button(ctx->body, "Retry", _btn_retry_cb);
+        lv_obj_align(btn_r, LV_ALIGN_BOTTOM_MID, 0, -10);
+        break;
+    }
+    }
+}
+
+static void _on_ap_del(lv_event_t* e)
+{
+    ap_ctx_t* ctx = (ap_ctx_t*)lv_event_get_user_data(e);
+    if (ctx) { lv_free(ctx); s_ap_ctx = NULL; }
 }
 
 void wifi_show_config_ui(void)
 {
     if (s_wifi_ui) {
-        // UI 已存在，重建内容以反映当前步骤
-        _wifi_ui_rebuild();
-    } else {
-        // 创建全屏容器
-        s_wifi_ui = lv_obj_create(lv_screen_active());
-        lv_obj_set_size(s_wifi_ui, 320, 240);
-        lv_obj_set_pos(s_wifi_ui, 0, 0);
-        lv_obj_set_style_radius(s_wifi_ui, 0, 0);
-        lv_obj_set_style_bg_color(s_wifi_ui, _bg_color(), 0);
-        lv_obj_set_style_bg_opa(s_wifi_ui, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(s_wifi_ui, 0, 0);
-        lv_obj_set_style_pad_all(s_wifi_ui, 0, 0);
-        lv_obj_set_style_layout(s_wifi_ui, LV_LAYOUT_FLEX, 0);
-        lv_obj_set_flex_flow(s_wifi_ui, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(s_wifi_ui, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_all(s_wifi_ui, 24, 0);
+        // 更新状态
+        if (s_ap_ctx) {
+            s_ap_ctx->state = (s_ui_step == WIFI_UI_STEP_SUCCESS) ? AP_SUCCESS
+                           : (s_ui_step == WIFI_UI_STEP_CONNECTING) ? AP_CONNECTING
+                           : (s_ui_step == WIFI_UI_STEP_ERROR) ? AP_ERROR
+                           : AP_IDLE;
+            _wifi_render(s_ap_ctx);
+        }
+        return;
     }
 
-    switch (s_ui_step) {
-        case WIFI_UI_STEP_AP: {
-            // === AP 模式: 热点信息 + 配网说明 ===
-            lv_obj_t *icon = lv_label_create(s_wifi_ui);
-            lv_label_set_text(icon, "WiFi");
-            lv_obj_set_style_text_font(icon, &lv_font_montserrat_14, 0);
-            lv_obj_set_style_text_color(icon, _accent_color(), 0);
-            lv_obj_set_style_pad_bottom(icon, 16, 0);
+    lv_color_t bg = theme_bg();
 
-            lv_obj_t *title = lv_label_create(s_wifi_ui);
-            lv_label_set_text(title, "WiFi Setup");
-            lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
-            lv_obj_set_style_text_color(title, _text_color(), 0);
-            lv_obj_set_style_pad_bottom(title, 4, 0);
+    // 全屏页面容器
+    s_wifi_ui = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(s_wifi_ui, 320, 240);
+    lv_obj_set_pos(s_wifi_ui, 0, 0);
+    lv_obj_set_style_bg_color(s_wifi_ui, bg, 0);
+    lv_obj_set_style_border_width(s_wifi_ui, 0, 0);
+    lv_obj_set_style_pad_all(s_wifi_ui, 0, 0);
+    lv_obj_remove_flag(s_wifi_ui, LV_OBJ_FLAG_SCROLLABLE);
 
-            s_status_label = lv_label_create(s_wifi_ui);
-            lv_label_set_text_fmt(s_status_label,
-                "Hotspot: %s\n"
-                "Open http://192.168.4.1\n"
-                "to configure WiFi",
-                AP_SSID);
-            lv_obj_set_style_text_align(s_status_label, LV_TEXT_ALIGN_CENTER, 0);
-            lv_obj_set_style_text_color(s_status_label, _text_color(), 0);
-            lv_obj_set_style_pad_top(s_status_label, 12, 0);
-            lv_obj_set_style_pad_bottom(s_status_label, 24, 0);
+    // 状态栏 + 顶栏
+    xb_statusbar_create(s_wifi_ui);
+    lv_obj_t* tb = xb_topbar_create(s_wifi_ui, "Wi-Fi", true);
+    lv_obj_add_flag(tb, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(tb, _btn_back_cb, LV_EVENT_CLICKED, NULL);
 
-            lv_obj_t *btn_cancel = lv_btn_create(s_wifi_ui);
-            lv_obj_set_size(btn_cancel, 140, 40);
-            lv_obj_set_style_radius(btn_cancel, 8, 0);
-            lv_obj_set_style_bg_color(btn_cancel, _accent_color(), 0);
-            lv_obj_add_event_cb(btn_cancel, _btn_close_cb, LV_EVENT_CLICKED, NULL);
+    // Context
+    ap_ctx_t* ctx = (ap_ctx_t*)lv_malloc(sizeof(ap_ctx_t));
+    ctx->state = AP_IDLE;
+    s_ap_ctx = ctx;
 
-            lv_obj_t *btn_label = lv_label_create(btn_cancel);
-            lv_label_set_text(btn_label, "Cancel");
-            lv_obj_set_style_text_color(btn_label, lv_color_hex(0xFFFFFF), 0);
-            lv_obj_center(btn_label);
+    lv_obj_add_event_cb(s_wifi_ui, _on_ap_del, LV_EVENT_DELETE, ctx);
 
-            ESP_LOGI(TAG, "WiFi UI: AP 模式步骤");
-            break;
-        }
+    // Body (内容区, topbar 下方 190px)
+    ctx->body = lv_obj_create(s_wifi_ui);
+    lv_obj_set_size(ctx->body, 320, 190);
+    lv_obj_align(ctx->body, LV_ALIGN_TOP_MID, 0, 50);
+    lv_obj_set_style_bg_opa(ctx->body, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ctx->body, 0, 0);
+    lv_obj_remove_flag(ctx->body, LV_OBJ_FLAG_SCROLLABLE);
 
-        case WIFI_UI_STEP_CONNECTING: {
-            // === 连接中: 简易旋转指示 + 文字 ===
-            lv_obj_t *spinner = lv_label_create(s_wifi_ui);
-            lv_label_set_text(spinner, ">");
-            lv_obj_set_style_text_font(spinner, &lv_font_montserrat_14, 0);
-            lv_obj_set_style_text_color(spinner, _accent_color(), 0);
-            lv_obj_set_style_pad_bottom(spinner, 12, 0);
-
-            // 简易旋转动画
-            lv_anim_t spin_anim;
-            lv_anim_init(&spin_anim);
-            lv_anim_set_var(&spin_anim, spinner);
-            lv_anim_set_exec_cb(&spin_anim, _spinner_rotate_cb);
-            lv_anim_set_values(&spin_anim, 0, 3600);
-            lv_anim_set_time(&spin_anim, 1000);
-            lv_anim_set_repeat_count(&spin_anim, LV_ANIM_REPEAT_INFINITE);
-            lv_anim_set_path_cb(&spin_anim, lv_anim_path_linear);
-            lv_anim_start(&spin_anim);
-
-            s_status_label = lv_label_create(s_wifi_ui);
-            lv_label_set_text(s_status_label, "Connecting...");
-            lv_obj_set_style_text_color(s_status_label, _accent_color(), 0);
-            lv_obj_set_style_pad_top(s_status_label, 12, 0);
-            lv_obj_set_style_pad_bottom(s_status_label, 24, 0);
-
-            lv_obj_t *btn_cancel2 = lv_btn_create(s_wifi_ui);
-            lv_obj_set_size(btn_cancel2, 140, 40);
-            lv_obj_set_style_radius(btn_cancel2, 8, 0);
-            lv_obj_set_style_bg_color(btn_cancel2, lv_color_hex(0x3F3F46), 0);
-            lv_obj_add_event_cb(btn_cancel2, _btn_close_cb, LV_EVENT_CLICKED, NULL);
-
-            lv_obj_t *btn_label2 = lv_label_create(btn_cancel2);
-            lv_label_set_text(btn_label2, "Cancel");
-            lv_obj_set_style_text_color(btn_label2, _text_color(), 0);
-            lv_obj_center(btn_label2);
-
-            ESP_LOGI(TAG, "WiFi UI: 连接中步骤");
-            break;
-        }
-
-        case WIFI_UI_STEP_SUCCESS: {
-            // === 连接成功 ===
-            lv_obj_t *check = lv_label_create(s_wifi_ui);
-            lv_label_set_text(check, "OK");
-            lv_obj_set_style_text_font(check, &lv_font_montserrat_14, 0);
-            lv_obj_set_style_text_color(check, lv_color_hex(0x22C55E), 0);
-            lv_obj_set_style_pad_bottom(check, 12, 0);
-
-            s_status_label = lv_label_create(s_wifi_ui);
-            lv_label_set_text_fmt(s_status_label, "Connected!\nSSID: %s", s_connected_ssid);
-            lv_obj_set_style_text_align(s_status_label, LV_TEXT_ALIGN_CENTER, 0);
-            lv_obj_set_style_text_color(s_status_label, _accent_color(), 0);
-            lv_obj_set_style_pad_bottom(s_status_label, 24, 0);
-
-            lv_obj_t *btn_done = lv_btn_create(s_wifi_ui);
-            lv_obj_set_size(btn_done, 140, 40);
-            lv_obj_set_style_radius(btn_done, 8, 0);
-            lv_obj_set_style_bg_color(btn_done, _accent_color(), 0);
-            lv_obj_add_event_cb(btn_done, _btn_done_cb, LV_EVENT_CLICKED, NULL);
-
-            lv_obj_t *btn_label3 = lv_label_create(btn_done);
-            lv_label_set_text(btn_label3, "Done");
-            lv_obj_set_style_text_color(btn_label3, lv_color_hex(0xFFFFFF), 0);
-            lv_obj_center(btn_label3);
-
-            ESP_LOGI(TAG, "WiFi UI: 成功步骤");
-            break;
-        }
-
-        case WIFI_UI_STEP_ERROR: {
-            // === 连接失败 ===
-            lv_obj_t *x_icon = lv_label_create(s_wifi_ui);
-            lv_label_set_text(x_icon, "X");
-            lv_obj_set_style_text_font(x_icon, &lv_font_montserrat_14, 0);
-            lv_obj_set_style_text_color(x_icon, lv_color_hex(0xEF4444), 0);
-            lv_obj_set_style_pad_bottom(x_icon, 12, 0);
-
-            s_status_label = lv_label_create(s_wifi_ui);
-            lv_label_set_text(s_status_label, "Connection failed\nPlease try again");
-            lv_obj_set_style_text_align(s_status_label, LV_TEXT_ALIGN_CENTER, 0);
-            lv_obj_set_style_text_color(s_status_label, lv_color_hex(0xF87171), 0);
-            lv_obj_set_style_pad_bottom(s_status_label, 20, 0);
-
-            // 按钮行
-            lv_obj_t *btn_row = lv_obj_create(s_wifi_ui);
-            lv_obj_set_size(btn_row, 280, 44);
-            lv_obj_set_style_bg_opa(btn_row, LV_OPA_TRANSP, 0);
-            lv_obj_set_style_border_width(btn_row, 0, 0);
-            lv_obj_set_style_pad_all(btn_row, 0, 0);
-            lv_obj_set_style_layout(btn_row, LV_LAYOUT_FLEX, 0);
-            lv_obj_set_flex_flow(btn_row, LV_FLEX_FLOW_ROW);
-            lv_obj_set_flex_align(btn_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-            lv_obj_t *btn_back = lv_btn_create(btn_row);
-            lv_obj_set_size(btn_back, 110, 40);
-            lv_obj_set_style_radius(btn_back, 8, 0);
-            lv_obj_set_style_bg_color(btn_back, lv_color_hex(0x3F3F46), 0);
-            lv_obj_add_event_cb(btn_back, _btn_retry_cb, LV_EVENT_CLICKED, NULL);
-
-            lv_obj_t *back_label = lv_label_create(btn_back);
-            lv_label_set_text(back_label, "Back");
-            lv_obj_set_style_text_color(back_label, _text_color(), 0);
-            lv_obj_center(back_label);
-
-            lv_obj_t *btn_retry = lv_btn_create(btn_row);
-            lv_obj_set_size(btn_retry, 110, 40);
-            lv_obj_set_style_radius(btn_retry, 8, 0);
-            lv_obj_set_style_bg_color(btn_retry, lv_color_hex(0x7F1D1D), 0);
-            lv_obj_add_event_cb(btn_retry, _btn_retry_cb, LV_EVENT_CLICKED, NULL);
-
-            lv_obj_t *retry_label = lv_label_create(btn_retry);
-            lv_label_set_text(retry_label, "Retry");
-            lv_obj_set_style_text_color(retry_label, lv_color_hex(0xFCA5A5), 0);
-            lv_obj_center(retry_label);
-
-            ESP_LOGI(TAG, "WiFi UI: 错误步骤");
-            break;
-        }
-    }
-
-    ESP_LOGI(TAG, "WiFi 配置界面 V3.9 已显示 (step=%d)", s_ui_step);
+    _wifi_render(ctx);
+    ESP_LOGI(TAG, "WiFi UI v6.2 已显示 (state=%d)", ctx->state);
 }
 
 void wifi_hide_config_ui(void)

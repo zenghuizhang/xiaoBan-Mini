@@ -2,6 +2,9 @@ idf_component_register(
     SRCS
         "event_bus.c"
         "breathing.c"
+        "face_render.cpp"
+        "radial_menu.c"
+        "dialog_bubble.c"
     INCLUDE_DIRS
         "include"
         "../../main/ui"

@@ -24,12 +24,14 @@ static const Scenario scenarios[] = {
     {"Thinking", EXPR_THINKING,   "让我想想...", "Let me think..."},
     {"Surprised",EXPR_SURPRISED,  "哇！真的吗？", "Wow！Really?"},
     {"Sad",      EXPR_SAD,        "有点难过...", "A bit sad..."},
+    {"Dizzy",    EXPR_DIZZY,      "晕乎乎...", "So dizzy..."},
 };
 #define SC_COUNT (sizeof(scenarios)/sizeof(scenarios[0]))
 
 static void _sc_close_cb(lv_event_t *e)
 {
     scenario_overlay_close();
+    expression_set_drawing_enabled(true);
     if (s_on_close) s_on_close();
 }
 
@@ -53,7 +55,6 @@ lv_obj_t *scenario_overlay_create(lv_obj_t *parent, void (*on_close)(void))
     if (s_overlay) return s_overlay;
     s_on_close = on_close;
 
-    bool is_tech = (theme_v3_get_current() == THEME_TECH);
     lv_color_t fg = theme_fg();
     lv_color_t bg = lv_color_hex(0x0F172A);
     lv_color_t btn_bg = lv_color_hex(0x1E293B);

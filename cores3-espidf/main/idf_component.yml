@@ -1,4 +1,7 @@
 dependencies:
   lvgl/lvgl: "^9.5.0"
   m5stack/m5unified: "^0.2.13"
+  espressif/mcp-c-sdk: "^2.0.1"
+  espressif/cjson: "^1.7"
+  espressif/mdns: "^1.10.1"
   idf: ">=5.1.0"

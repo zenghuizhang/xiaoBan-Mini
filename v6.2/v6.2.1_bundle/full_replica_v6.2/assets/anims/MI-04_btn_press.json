@@ -1,0 +1,25 @@
+{
+  "name": "button-press",
+  "duration_ms": 80,
+  "loop": false,
+  "tracks": [
+    {
+      "target": "btn",
+      "prop": "scale",
+      "keys": [
+        [
+          0,
+          1.0
+        ],
+        [
+          40,
+          0.96
+        ],
+        [
+          80,
+          1.0
+        ]
+      ]
+    }
+  ]
+}

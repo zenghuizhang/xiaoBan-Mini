@@ -1,0 +1,10 @@
+idf_component_register(
+    SRCS
+        "esp_http_client_reuse.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        esp_http_client
+        freertos
+        http_parser
+)

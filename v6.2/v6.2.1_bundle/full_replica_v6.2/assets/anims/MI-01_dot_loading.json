@@ -1,0 +1,57 @@
+{
+  "name": "dot-loading",
+  "duration_ms": 600,
+  "loop": true,
+  "tracks": [
+    {
+      "target": "dot1",
+      "prop": "opacity",
+      "keys": [
+        [
+          0,
+          0.3
+        ],
+        [
+          200,
+          1.0
+        ],
+        [
+          600,
+          0.3
+        ]
+      ]
+    },
+    {
+      "target": "dot2",
+      "prop": "opacity",
+      "keys": [
+        [
+          0,
+          0.3
+        ],
+        [
+          400,
+          1.0
+        ],
+        [
+          600,
+          0.3
+        ]
+      ]
+    },
+    {
+      "target": "dot3",
+      "prop": "opacity",
+      "keys": [
+        [
+          200,
+          0.3
+        ],
+        [
+          600,
+          1.0
+        ]
+      ]
+    }
+  ]
+}

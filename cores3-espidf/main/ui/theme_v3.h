@@ -17,11 +17,12 @@ typedef enum {
 #define FACE_SCALE  1.6f
 
 // Tech 主题: cyan-400 #22D3EE
-#define TECH_FG            lv_color_hex(0x22D3EE)
+// v6.2: Tech cyan #33C5FF (从 #22D3EE 升级)
+#define TECH_FG            lv_color_hex(0x33C5FF)
 #define TECH_BG            lv_color_hex(0x000000)
 
-// Child 主题: coral #FF7F50 (v5.0 从 orange-400 改为 coral)
-#define CHILD_FG           lv_color_hex(0xFF7F50)
+// v6.2: Child coral #FF9E7D (从 #FF7F50 升级)
+#define CHILD_FG           lv_color_hex(0xFF9E7D)
 #define CHILD_BG           lv_color_hex(0xFFF9E6)
 
 // Dev 主题: green-500 #22C55E (新增)

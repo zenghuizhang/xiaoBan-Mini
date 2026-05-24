@@ -1,0 +1,21 @@
+set(srcs
+    "src/cap_im_attachment.c"
+    "src/cap_im_platform.c"
+)
+
+idf_component_register(
+    SRCS
+        ${srcs}
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        claw_cap
+        claw_event_router
+        esp_http_client
+        http_reuse
+        esp_event
+        esp_timer
+        freertos
+        mbedtls
+        json
+)

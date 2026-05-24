@@ -1,0 +1,9 @@
+idf_component_register(
+    SRCS
+        "src/ui_bridge.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        freertos
+        esp_event
+)

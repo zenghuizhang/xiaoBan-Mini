@@ -47,7 +47,31 @@ static const uint8_t qr_matrix[QR_SIZE][QR_SIZE] = {
 static const char *TAG = "QRCODE";
 static lv_obj_t *qr_screen = NULL;
 static int qr_offset_x = 0, qr_offset_y = 0;
+static int qr_module_size = QR_MODULE;
 static void qrcode_close_cb(lv_event_t *e);
+
+// 公开: 在任意 layer 上绘制 QR 码 (用于嵌入页面)
+void qrcode_draw_on_layer(lv_layer_t *layer, int x0, int y0, int module_px)
+{
+    lv_draw_rect_dsc_t dsc;
+    lv_draw_rect_dsc_init(&dsc);
+    dsc.bg_color = lv_color_hex(0x000000);
+    dsc.bg_opa = LV_OPA_COVER;
+    dsc.radius = 0;
+    dsc.border_width = 0;
+
+    for (int r = 0; r < QR_SIZE; r++) {
+        for (int c = 0; c < QR_SIZE; c++) {
+            if (!qr_matrix[r][c]) continue;
+            lv_area_t a;
+            a.x1 = x0 + c * module_px;
+            a.y1 = y0 + r * module_px;
+            a.x2 = a.x1 + module_px - 1;
+            a.y2 = a.y1 + module_px - 1;
+            lv_draw_rect(layer, &dsc, &a);
+        }
+    }
+}
 
 /* DRAW_POST: 用 lv_draw_rect 画 QR 码模块 (零额外 obj, 不耗内存) */
 static void _qr_draw_cb(lv_event_t *e)

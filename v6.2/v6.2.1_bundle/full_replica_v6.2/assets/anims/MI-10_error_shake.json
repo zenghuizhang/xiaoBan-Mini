@@ -1,0 +1,33 @@
+{
+  "name": "error-shake",
+  "duration_ms": 200,
+  "loop": false,
+  "tracks": [
+    {
+      "target": "obj",
+      "prop": "x",
+      "keys": [
+        [
+          0,
+          0
+        ],
+        [
+          50,
+          -4
+        ],
+        [
+          100,
+          4
+        ],
+        [
+          150,
+          -4
+        ],
+        [
+          200,
+          0
+        ]
+      ]
+    }
+  ]
+}
