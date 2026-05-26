@@ -1,0 +1,121 @@
+{
+  "state_name": "Boot Animation",
+  "state_url": "/?state=boot&theme=tech",
+  "children": [
+    {
+      "interaction": "Auto transition after 3.5s",
+      "state_name": "Idle",
+      "state_url": "/?state=idle&theme=tech",
+      "children": [
+        {
+          "interaction": "Double click screen",
+          "state_name": "Radial Menu",
+          "state_url": "/?state=menu&theme=tech",
+          "children": [
+            {
+              "interaction": "Click '模型' (Model) sector",
+              "state_name": "Model Picker",
+              "state_url": "/?state=model&theme=tech",
+              "children": []
+            },
+            {
+              "interaction": "Click '人格' (Persona) sector",
+              "state_name": "Persona Grid",
+              "state_url": "/?state=persona&theme=tech",
+              "children": []
+            },
+            {
+              "interaction": "Click '记忆' (Memory) sector",
+              "state_name": "Memory Browser",
+              "state_url": "/?state=memory&theme=tech",
+              "children": [
+                {
+                  "interaction": "Click '清空'",
+                  "state_name": "Memory Purge Modal",
+                  "state_url": "/?state=memory_purge&theme=tech",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "interaction": "Click '主题' (Theme) sector",
+              "state_name": "Theme Picker",
+              "state_url": "/?state=theme_picker&theme=tech",
+              "children": []
+            },
+            {
+              "interaction": "Click '设置' (Settings) sector",
+              "state_name": "Settings",
+              "state_url": "/?state=settings&theme=tech",
+              "children": [
+                {
+                  "interaction": "Click 'Wi-Fi网络'",
+                  "state_name": "Wi-Fi AP Mode",
+                  "state_url": "/?state=wifi_ap&theme=tech",
+                  "children": []
+                },
+                {
+                  "interaction": "Click '技能插件'",
+                  "state_name": "Skills Panel",
+                  "state_url": "/?state=skills&theme=tech",
+                  "children": []
+                },
+                {
+                  "interaction": "Click '系统更新 (OTA)'",
+                  "state_name": "OTA Update",
+                  "state_url": "/?state=ota&theme=tech",
+                  "children": []
+                },
+                {
+                  "interaction": "Click '控制台 (Console)'",
+                  "state_name": "Console AI",
+                  "state_url": "/?state=console_ai&theme=tech",
+                  "children": [
+                    {
+                      "interaction": "Click 'Display' tab",
+                      "state_name": "Console Display",
+                      "state_url": "/?state=console_display&theme=tech",
+                      "children": []
+                    },
+                    {
+                      "interaction": "Click 'Service' tab",
+                      "state_name": "Console Service",
+                      "state_url": "/?state=console_service&theme=tech",
+                      "children": [
+                        {
+                          "interaction": "Click '🎤 语音唤醒'",
+                          "state_name": "Scenario - Voice Wake",
+                          "state_url": "/?state=voice_wake&theme=tech",
+                          "children": []
+                        },
+                        {
+                          "interaction": "Click '🤖 OTA模拟'",
+                          "state_name": "Scenario - OTA Update",
+                          "state_url": "/?state=ota&theme=tech",
+                          "children": []
+                        }
+                      ]
+                    },
+                    {
+                      "interaction": "Click 'System' tab",
+                      "state_name": "Console System",
+                      "state_url": "/?state=console_system&theme=tech",
+                      "children": [
+                        {
+                          "interaction": "Click '前倾'",
+                          "state_name": "IMU - Curious",
+                          "state_url": "/?state=curious&theme=tech",
+                          "children": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

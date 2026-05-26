@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect width="256" height="256" rx="32" fill="#000000"/>
+  <g fill="none" stroke="#33C5FF" stroke-width="10"
+     stroke-linecap="round" stroke-linejoin="round"
+     style="color:#33C5FF">
+    
+        <rect x="64"  y="64"  width="128" height="128" rx="16"/>
+        <rect x="96"  y="96"  width="64"  height="64"  rx="6"/>
+        <line x1="40"  y1="96"  x2="64"  y2="96"/>
+        <line x1="40"  y1="128" x2="64"  y2="128"/>
+        <line x1="40"  y1="160" x2="64"  y2="160"/>
+        <line x1="192" y1="96"  x2="216" y2="96"/>
+        <line x1="192" y1="128" x2="216" y2="128"/>
+        <line x1="192" y1="160" x2="216" y2="160"/>
+        <line x1="96"  y1="40"  x2="96"  y2="64"/>
+        <line x1="128" y1="40"  x2="128" y2="64"/>
+        <line x1="160" y1="40"  x2="160" y2="64"/>
+        <line x1="96"  y1="192" x2="96"  y2="216"/>
+        <line x1="128" y1="192" x2="128" y2="216"/>
+        <line x1="160" y1="192" x2="160" y2="216"/>
+    
+  </g>
+</svg>

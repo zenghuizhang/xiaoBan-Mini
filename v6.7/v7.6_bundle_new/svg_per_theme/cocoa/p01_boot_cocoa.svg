@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240"
+  width="640" height="480" style="background:#2D1B0E">
+  <defs>
+    <filter id="glow"><feGaussianBlur stdDeviation="3"/></filter>
+  </defs>
+  <rect width="320" height="240" fill="#2D1B0E"/>
+  <!-- RGB strip -->
+  <rect x="0" y="0" width="320" height="2" fill="#FDA4AF" opacity="0.85"/>
+<rect x="104" y="130" width="32" height="64" rx="32" fill="#FDA4AF"/>
+<rect x="100" y="126" width="40" height="72" rx="36" fill="#FDA4AF" filter="url(#glow)" opacity="0.7"/>
+<rect x="184" y="130" width="32" height="64" rx="32" fill="#FDA4AF"/>
+<rect x="180" y="126" width="40" height="72" rx="36" fill="#FDA4AF" filter="url(#glow)" opacity="0.7"/>
+<rect x="148" y="158" width="24" height="4" rx="2" fill="#FDA4AF"/>
+<rect x="145" y="155" width="30" height="10" rx="5" fill="#FDA4AF" filter="url(#glow)" opacity="0.7"/><text x="160" y="220" text-anchor="middle" font-family="PingFang SC, Noto Sans CJK SC, Inter, sans-serif" font-size="9" fill="#D9C1A0">v7.6 · 揉眼启动…</text></svg>

@@ -1,0 +1,15 @@
+# M5Stack CoreS3 Companion Robot UI v14
+- Deep integration of Emotional Connection Layer (PRD v4.5).
+- New Expressions added to `Face.tsx`:
+  - `sleep_wake`: Slowly opening eyes (Good Morning).
+  - `look_around`: Eyes looking left/right (Lonely Level 1).
+  - `yawn`: Half closed eyes, yawning mouth (Lonely Level 2).
+  - `lost`: Drooping outer corners (Lonely Level 3).
+  - `celebrate`: Rapid pupil scaling (Reward).
+  - `excited`: Large eyes, fast blinking.
+  - `angry`: Drooping inner corners (frown).
+  - `curious`: Eyes shifted and tilted to one corner.
+- Added RGB Light Strip simulation at the bottom of the screen (responds to states like angry -> red pulse, lonely_3 -> yellow alert).
+- Added Dialog Bubble system for active communication (Morning greeting, sleep reminder, suggestions).
+- Added a "场景模拟" (Scenario Sim) in the Menu Overlay to trigger these new complex logic states manually since we lack real IMU/RTC hardware.
+- Fully adapted to 320x240 resolution, maintaining Tech (Cyan) and Child (Orange) themes.

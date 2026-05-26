@@ -1,0 +1,12 @@
+# M5Stack CoreS3 Companion Robot UI v20
+- Unified Boot Animation: Replaced theme-specific boot animations with a unified "waking up" sequence (Black fade to theme bg, rubbing eyes, yawning, then wide open with sparkles).
+- Replaced Steel theme with Cocoa Pink (草莓可可) theme.
+  - Background: #2D1B0E (Deep Cocoa Brown)
+  - Panel: #3F2B20 (Neutral Brown)
+  - Accent: #FB7185 (Strawberry Pink)
+  - Accent Hi: #FDA4AF
+  - Text: #FEF3C7 (Cream)
+  - Border: #573D2C
+- Settings / Console completely translated to Chinese (General, System, Features, etc. are now 通用, 系统, 拓展功能).
+- Developer mode is now unlocked and visible by default in Settings, removing the 5-tap hidden logic.
+- Maintained 320x240 size, Chinese UI.

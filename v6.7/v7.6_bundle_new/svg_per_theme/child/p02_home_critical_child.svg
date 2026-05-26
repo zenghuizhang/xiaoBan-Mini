@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240"
+  width="640" height="480" style="background:#FFF9E6">
+  <defs>
+    <filter id="glow"><feGaussianBlur stdDeviation="3"/></filter>
+  </defs>
+  <rect width="320" height="240" fill="#FFF9E6"/>
+  <!-- RGB strip -->
+  <rect x="0" y="0" width="320" height="2" fill="#FFAA78" opacity="0.85"/>
+
+  <text x="6" y="11" font-family="PingFang SC, Noto Sans CJK SC, Inter, sans-serif" font-size="9" fill="#F43F5E">📶</text>
+  <text x="300" y="11" font-family="PingFang SC, Noto Sans CJK SC, Inter, sans-serif" font-size="9" text-anchor="end" fill="#F43F5E">🔋 87%</text>
+  <text x="155" y="11" font-family="PingFang SC, Noto Sans CJK SC, Inter, sans-serif" font-size="9" text-anchor="middle" fill="#FFAA78">●</text>
+<rect x="108" y="138" width="28" height="20" rx="10" fill="#FFAA78"/>
+<rect x="104" y="134" width="36" height="28" rx="14" fill="#FFAA78" filter="url(#glow)" opacity="0.7"/>
+<rect x="184" y="138" width="28" height="20" rx="10" fill="#FFAA78"/>
+<rect x="180" y="134" width="36" height="28" rx="14" fill="#FFAA78" filter="url(#glow)" opacity="0.7"/>
+<rect x="150" y="162" width="20" height="8" rx="6" fill="#FFAA78"/>
+<rect x="147" y="159" width="26" height="14" rx="9" fill="#FFAA78" filter="url(#glow)" opacity="0.7"/><text x="160" y="218" text-anchor="middle" font-family="PingFang SC, Noto Sans CJK SC, Inter, sans-serif" font-size="10" fill="#F43F5E">⚠ 电量不足 7%</text></svg>

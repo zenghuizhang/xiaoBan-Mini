@@ -1,0 +1,20 @@
+## IDF Component Manager manifest for claw_xb_ui v7.6
+## Drop into the project root or under components/xb_ui/
+
+dependencies:
+  idf:               ">=5.5,<6.0"
+  lvgl/lvgl:         "~9.5.0"
+  espressif/esp_lvgl_port: "^2.4.0"
+  # Optional — uncomment to enable sqlite-backed memory:
+  # espressif/esp_sqlite: "^1.0.0"
+
+description: |
+  v7.6 desktop companion UI for M5Stack CoreS3.
+  - 4 themes (tech/lavender/child/cocoa) with light/dark card opacity rule
+  - 24-variant geometric face engine driven by accent_hi
+  - 6-sector radial menu (Theme replaces Skills)
+  - 6 personas, sqlite-backed memory, 4-mode statusbar
+  - Developer console (default-visible in Settings, badge: 测试)
+
+maintainers:
+  - claw-xb-team <claw-xb@bytedance.example>
