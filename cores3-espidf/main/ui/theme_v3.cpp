@@ -1,50 +1,32 @@
-/*
- * v5.0 主题系统: Tech (cyan) / Child (coral) / Dev (green)
- */
+// v6.7 4-theme palette (lv_color_hex, 对齐 theme_tokens.h)
 #include "theme_v3.h"
 #include <esp_log.h>
 
-static const char *TAG = "THEME";
-static ThemeV3 current_theme = THEME_TECH;
+static const char* TAG = "THEME";
+static ThemeV3 cur = THEME_TECH;
 
-static void _theme_update_screen_bg(void)
-{
-    lv_obj_t *screen = lv_screen_active();
-    lv_color_t bg = TECH_BG;
-    if (current_theme == THEME_CHILD) bg = CHILD_BG;
-    else if (current_theme == THEME_DEV) bg = DEV_BG;
-    lv_obj_set_style_bg_color(screen, bg, 0);
-}
+static const theme_colors_t P[4] = {
+    // TECH dark cyan
+    {lv_color_hex(0x000000),lv_color_hex(0x0A1E28),lv_color_hex(0x22D3EE),lv_color_hex(0x0F5A78),
+     lv_color_hex(0xB4EBFF),lv_color_hex(0x6EAAC8),lv_color_hex(0x14506E),lv_color_hex(0xF43F5E),
+     lv_color_hex(0x22C55E),lv_color_hex(0x33C5FF),0},
+    // LAVENDER light purple
+    {lv_color_hex(0xFAF5FF),lv_color_hex(0xFFFFFF),lv_color_hex(0x9333EA),lv_color_hex(0xA855F7),
+     lv_color_hex(0x4C1D95),lv_color_hex(0x7C3AED),lv_color_hex(0xE9D5FF),lv_color_hex(0xEF4444),
+     lv_color_hex(0x22C55E),lv_color_hex(0xA855F7),1},
+    // CHILD light coral
+    {lv_color_hex(0xFFF9E6),lv_color_hex(0xFFFFFF),lv_color_hex(0xFF7F50),lv_color_hex(0xFFAA78),
+     lv_color_hex(0xC85A28),lv_color_hex(0xD28C5A),lv_color_hex(0xFFC8A0),lv_color_hex(0xF43F5E),
+     lv_color_hex(0x22C55E),lv_color_hex(0xFFAA78),1},
+    // COCOA dark rose
+    {lv_color_hex(0x2D1B0E),lv_color_hex(0x3F2B20),lv_color_hex(0xFB7185),lv_color_hex(0xFDA4AF),
+     lv_color_hex(0xFEF3C7),lv_color_hex(0xD9C1A0),lv_color_hex(0x573D2C),lv_color_hex(0xEF4444),
+     lv_color_hex(0x22C55E),lv_color_hex(0xFDA4AF),0},
+};
 
-void theme_v3_init(ThemeV3 default_theme)
-{
-    current_theme = default_theme;
-    _theme_update_screen_bg();
-    ESP_LOGI(TAG, "v5.0 主题: %s",
-        default_theme == THEME_TECH ? "Tech(cyan)" :
-        default_theme == THEME_CHILD ? "Child(coral)" : "Dev(green)");
-}
-
-void theme_v3_switch(ThemeV3 theme)
-{
-    if (theme == current_theme) return;
-    current_theme = theme;
-    _theme_update_screen_bg();
-    ESP_LOGI(TAG, "切换: %s",
-        theme == THEME_TECH ? "Tech" : theme == THEME_CHILD ? "Child" : "Dev");
-}
-
-ThemeV3 theme_v3_get_current(void) { return current_theme; }
-
-lv_color_t theme_fg(void)
-{
-    if (current_theme == THEME_CHILD) return CHILD_FG;
-    if (current_theme == THEME_DEV)   return DEV_FG;
-    return TECH_FG;
-}
-
-lv_color_t theme_bg(void)
-{
-    if (current_theme == THEME_CHILD) return CHILD_BG;
-    return TECH_BG;  // tech 和 dev 都是黑背景
-}
+void theme_v3_init(ThemeV3 t){cur=t;lv_obj_set_style_bg_color(lv_screen_active(),P[cur].bg,0);}
+void theme_v3_switch(ThemeV3 t){if(t==cur)return;cur=t;lv_obj_set_style_bg_color(lv_screen_active(),P[cur].bg,0);}
+ThemeV3 theme_v3_get_current(void){return cur;}
+lv_color_t theme_fg(void){return P[cur].accent_hi;}
+lv_color_t theme_bg(void){return P[cur].bg;}
+const theme_colors_t* theme_get_colors(void){return &P[cur];}

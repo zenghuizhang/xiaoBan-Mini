@@ -20,7 +20,7 @@ lv_obj_t *dialog_bubble_show(lv_obj_t *parent, DialogType type, uint32_t duratio
     if (bubble) dialog_bubble_close();
 
     bool is_tech = (theme_v3_get_current() == THEME_TECH);
-    bool is_dev  = (theme_v3_get_current() == THEME_DEV);
+    bool is_dev  = (theme_v3_get_current() == THEME_COCOA);
 
     const char *text = "";
     switch (type) {
@@ -64,7 +64,7 @@ lv_obj_t *dialog_bubble_show_text(lv_obj_t *parent, const char *cn, const char *
     if (bubble) dialog_bubble_close();
 
     bool is_tech = (theme_v3_get_current() == THEME_TECH);
-    bool is_dev  = (theme_v3_get_current() == THEME_DEV);
+    bool is_dev  = (theme_v3_get_current() == THEME_COCOA);
 
     const char *text = s_lang_cn ? cn : en;
 

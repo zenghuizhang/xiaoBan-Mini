@@ -29,6 +29,16 @@ idf_component_register(
         "ui/icons/icon_puzzle.c"
         "ui/icons/icon_shuffle.c"
         "ui/icons/menu_icons.c"
+        "ui/icons/icon_chat.c"
+        "ui/icons/icon_model.c"
+        "ui/icons/icon_theme.c"
+        "ui/icons/icon_settings2.c"
+        "ui/icons/icon_persona.c"
+        "ui/icons/icon_memory2.c"
+        "ui/page_model_picker.cpp"
+        "ui/page_theme_picker.cpp"
+        "ui/page_persona_grid.cpp"
+        "ui/page_memory_browser.cpp"
     INCLUDE_DIRS
         "."
         "ui"
@@ -49,4 +59,5 @@ idf_component_register(
         "cmd_wifi"
         "lv_chinese_font"
         "bsp_cores3"
+        "ui_bridge"
 )

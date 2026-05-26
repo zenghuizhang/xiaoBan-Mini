@@ -42,6 +42,10 @@
 #include "ui/page_chat.h"
 #include "ui/page_skills.h"
 #include "ui/page_skill_detail.h"
+#include "ui/page_model_picker.h"
+#include "ui/page_theme_picker.h"
+#include "ui/page_persona_grid.h"
+#include "ui/page_memory_browser.h"
 #include "ui/tech_ui.h"
 #include <math.h>
 
@@ -113,7 +117,7 @@ static void _radial_menu_cb(RadialMenuAction action)
         break;
     case RM_ACTION_THEME: {
         ThemeV3 cur = theme_v3_get_current();
-        ThemeV3 n = (cur == THEME_TECH) ? THEME_CHILD : (cur == THEME_CHILD) ? THEME_DEV : THEME_TECH;
+        ThemeV3 n = (cur == THEME_TECH) ? THEME_CHILD : (cur == THEME_CHILD) ? THEME_COCOA : THEME_TECH;
         theme_v3_switch(n);
         expression_refresh_theme();
         break;
@@ -185,34 +189,14 @@ static void _menu_close_cb(lv_event_t *e)
 static void _v6_menu_cb(lv_event_t *e)
 {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    // v7.6 §6: 0=Chat 1=Model 2=Theme 3=Settings 4=Persona 5=Memory
     switch (idx) {
-    case 0: {  // 表情 → 随机表情
-        Expression all[] = {EXPR_HAPPY, EXPR_WINK, EXPR_TALKING, EXPR_NAUGHTY, EXPR_DIZZY,
-                            EXPR_LOOK_LEFT, EXPR_LOOK_RIGHT, EXPR_CURIOUS, EXPR_YAWN,
-                            EXPR_THINKING, EXPR_SURPRISED, EXPR_CELEBRATE, EXPR_EXCITED,
-                            EXPR_SAD, EXPR_ANGRY, EXPR_LOST, EXPR_BREATH};
-        expression_set(all[esp_random() % 17], true);
-        break;
-    }
-    case 1:  // 对话页
-        _menu_close_cb(NULL);
-        page_chat_create(lv_screen_active());
-        return;
-    case 2: _menu_close_cb(NULL); _settings_show(); return;
-    case 3: {
-        ThemeV3 c = theme_v3_get_current();
-        theme_v3_switch(c == THEME_TECH ? THEME_CHILD : c == THEME_CHILD ? THEME_DEV : THEME_TECH);
-        expression_refresh_theme();
-        break;
-    }
-    case 4:  // 开发者控制台 (3 tab: Sensors/Scripts/Logs)
-        _menu_close_cb(NULL);
-        page_console_create(lv_screen_active());
-        return;
-    case 5:  // 技能商店
-        _menu_close_cb(NULL);
-        page_skills_create(lv_screen_active());
-        return;
+    case 0: _menu_close_cb(NULL); page_chat_create(lv_screen_active()); return;
+    case 1: _menu_close_cb(NULL); page_model_picker_create(lv_screen_active()); return;
+    case 2: _menu_close_cb(NULL); page_theme_picker_create(lv_screen_active()); return;
+    case 3: _menu_close_cb(NULL); _settings_show(); return;
+    case 4: _menu_close_cb(NULL); page_persona_grid_create(lv_screen_active()); return;
+    case 5: _menu_close_cb(NULL); page_memory_browser_create(lv_screen_active()); return;
     }
     _menu_close_cb(NULL);
 }

@@ -49,7 +49,7 @@ static lv_color_t _bg(void) { return theme_bg(); }
 
 static int _eye_radius(void)
 {
-    if (theme_v3_get_current() == THEME_DEV) return DEV_EYE_R;
+    if (theme_v3_get_current() == THEME_COCOA) return DEV_EYE_R;
     return EYE_R_TECH;
 }
 
@@ -499,7 +499,7 @@ static void _create_tear_objects(void)
     float s = FACE_SCALE;
     lv_obj_t *screen = lv_screen_active();
     lv_color_t tc = (theme_v3_get_current() == THEME_TECH) ? lv_color_hex(0x22D3EE)
-                  : (theme_v3_get_current() == THEME_DEV) ? lv_color_hex(0x22C55E)
+                  : (theme_v3_get_current() == THEME_COCOA) ? lv_color_hex(0x22C55E)
                   : lv_color_hex(0x60A5FA);
     int tw = (int)(10 * s + 0.5f), th = (int)(20 * s + 0.5f);
     tear_left = lv_obj_create(screen);

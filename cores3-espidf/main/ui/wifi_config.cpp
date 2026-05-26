@@ -107,18 +107,6 @@ static volatile bool s_pending_qr_close = false;
 #define AP_PASSWORD ""  // 无密码
 #define AP_TIMEOUT_MS (5 * 60 * 1000)  // 5分钟超时
 
-// ========== LVGL 样式辅助 ==========
-static lv_color_t _bg_color(void) {
-    return lv_color_hex(theme_v3_get_current() == THEME_TECH ? 0x000000 : 0xFFFBEB);
-}
-
-static lv_color_t _text_color(void) {
-    return lv_color_hex(theme_v3_get_current() == THEME_TECH ? 0xFFFFFF : 0x000000);
-}
-
-static lv_color_t _accent_color(void) {
-    return lv_color_hex(theme_v3_get_current() == THEME_TECH ? 0x22D3EE : 0xF97316);
-}
 
 // ========== Web配网页面HTML ==========
 static const char PROVISIONING_HTML[] =

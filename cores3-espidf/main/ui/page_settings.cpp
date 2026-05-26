@@ -5,6 +5,7 @@
 #include "expressions.h"
 #include "wifi_config.h"
 #include "page_ota.h"
+#include "page_console.h"
 #include "font_zh_14.h"
 #include <M5Unified.h>
 #include <esp_log.h>
@@ -34,11 +35,12 @@ static item_t G_PRIVACY[] = {
     {"麦克风", "Mic mute",    "Off",     1},
 };
 static item_t G_SYSTEM[] = {
-    {"关于",   "About",       "v6.2.0",  0},
+    {"控制台", "Console",     "Dev",     0},
+    {"关于",   "About",       "v6.7",    0},
     {"恢复出厂","Factory reset","",      0},
 };
 static item_t* GROUP_DATA[] = {G_GENERAL, G_AUDIO, G_NETWORK, G_PRIVACY, G_SYSTEM};
-static int GROUP_LEN[] = {3, 2, 2, 2, 2};
+static int GROUP_LEN[] = {3, 2, 2, 2, 3};
 
 // 组名双语
 static const char* GRP_CN[] = {"通用", "音频", "网络", "隐私", "系统"};
@@ -75,7 +77,7 @@ static void on_item(lv_event_t* e) {
     // Theme
     if (strcmp(it->label_en, "Theme") == 0) {
         ThemeV3 c = theme_v3_get_current();
-        theme_v3_switch(c == THEME_TECH ? THEME_CHILD : c == THEME_CHILD ? THEME_DEV : THEME_TECH);
+        theme_v3_switch(c == THEME_TECH ? THEME_CHILD : c == THEME_CHILD ? THEME_COCOA : THEME_TECH);
         expression_refresh_theme();
         lv_obj_delete(s_page); s_page = NULL;
         page_settings_create(lv_screen_active());
@@ -105,6 +107,12 @@ static void on_item(lv_event_t* e) {
     if (strcmp(it->label_en, "Update") == 0) {
         if (s_page) { lv_obj_delete(s_page); s_page = NULL; }
         page_ota_create(lv_screen_active());
+        return;
+    }
+    // Console
+    if (strcmp(it->label_en, "Console") == 0) {
+        if (s_page) { lv_obj_delete(s_page); s_page = NULL; }
+        page_console_create(lv_screen_active());
         return;
     }
     // Factory reset

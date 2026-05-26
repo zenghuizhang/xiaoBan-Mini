@@ -50,7 +50,7 @@ lv_obj_t *radial_menu_show(lv_obj_t *parent, void (*on_select)(RadialMenuAction 
     if (t == THEME_CHILD) {
         btn_bg = lv_color_hex(0xFFF5E0);
         btn_press = lv_color_hex(0xFF7F50);
-    } else if (t == THEME_DEV) {
+    } else if (t == THEME_COCOA) {
         btn_bg = lv_color_hex(0x0A1F0A);
         btn_press = lv_color_hex(0x22C55E);
     } else {

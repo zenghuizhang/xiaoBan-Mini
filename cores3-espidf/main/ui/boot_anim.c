@@ -230,6 +230,6 @@ void boot_anim_play(lv_obj_t *parent, void (*on_done)(void))
 
     ThemeV3 t = theme_v3_get_current();
     if (t == THEME_CHILD) _boot_child(anim_screen);
-    else if (t == THEME_DEV) _boot_dev(anim_screen);
+    else if (t == THEME_COCOA) _boot_dev(anim_screen);
     else _boot_tech(anim_screen);
 }
