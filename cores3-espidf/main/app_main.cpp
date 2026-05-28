@@ -81,18 +81,17 @@ static void _lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint
     uint32_t w = (uint32_t)(area->x2 - area->x1 + 1);
     uint32_t h = (uint32_t)(area->y2 - area->y1 + 1);
 
-    // Feed screenshot framebuffer BEFORE byte swap
-    screenshot_feed(area->x1, area->y1, w, h, (const uint16_t *)px_map);
-
-    // M5GFX DMA 发送数据时，ESP32-S3 小端序导致字节顺序反转
-    // GC9A01 期望 MSB-first，需要字节交换
+    // GC9A01 期望 MSB-first，需字节交换
     uint16_t *pixels = (uint16_t *)px_map;
     for (uint32_t i = 0; i < w * h; i++) {
         uint16_t p = pixels[i];
         pixels[i] = (p >> 8) | (p << 8);
     }
 
-    M5.Display.pushImageDMA(area->x1, area->y1, w, h, (uint16_t *)px_map);
+    // 截图抓swap之后的数据（和屏幕看到的一致）
+    screenshot_feed(area->x1, area->y1, w, h, pixels);
+
+    M5.Display.pushImageDMA(area->x1, area->y1, w, h, pixels);
     lv_display_flush_ready(disp);
 }
 
@@ -412,7 +411,7 @@ extern "C" void app_main(void)
     wifi_init();
 
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "系统启动完成! v5.0");
+    ESP_LOGI(TAG, "系统启动完成! xiaoBan v6.7");
     ESP_LOGI(TAG, "========================================");
 
     // ==============================================

@@ -44,7 +44,9 @@ static void _build_bmp(void) {
     *(uint16_t*)(bmp+26)=1; *(uint16_t*)(bmp+28)=24; *(uint32_t*)(bmp+34)=img;
     for (int y = 0; y < s_fb_h; y++) { uint8_t *r = bmp + 54 + y * row;
         for (int x = 0; x < s_fb_w; x++) { uint16_t c = s_fb[y * s_fb_w + x];
-            r[x*3+0]=(uint8_t)((c&0x1F)<<3); r[x*3+1]=(uint8_t)(((c>>5)&0x3F)<<2); r[x*3+2]=(uint8_t)(((c>>11)&0x1F)<<3); }
+            c = (c >> 8) | (c << 8); // undo GC9A01 byte swap for BMP
+            uint8_t b5=c&0x1F,g6=(c>>5)&0x3F,r5=(c>>11)&0x1F;
+            r[x*3+0]=(uint8_t)((b5*255+15)/31); r[x*3+1]=(uint8_t)((g6*255+31)/63); r[x*3+2]=(uint8_t)((r5*255+15)/31); }
     }
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     free(s_bmp); s_bmp = bmp; s_size = total;
