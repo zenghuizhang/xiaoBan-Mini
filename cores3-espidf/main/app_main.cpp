@@ -25,7 +25,7 @@
 #include "ui/interaction.h"
 #include "ui/wifi_config.h"
 #include "ui/font_zh_14.h"
-// #include "ui/screenshot.h"  // 截图已禁用
+#include "ui/screenshot.h"
 #include "ui/qrcode.h"
 #include "ui/boot_anim.h"
 #include "ui/radial_menu.h"
@@ -80,6 +80,9 @@ static void _lvgl_flush_callback(lv_display_t *disp, const lv_area_t *area, uint
 {
     uint32_t w = (uint32_t)(area->x2 - area->x1 + 1);
     uint32_t h = (uint32_t)(area->y2 - area->y1 + 1);
+
+    // Feed screenshot framebuffer BEFORE byte swap
+    screenshot_feed(area->x1, area->y1, w, h, (const uint16_t *)px_map);
 
     // M5GFX DMA 发送数据时，ESP32-S3 小端序导致字节顺序反转
     // GC9A01 期望 MSB-first，需要字节交换
@@ -443,6 +446,7 @@ extern "C" void app_main(void)
         // 表情轮播 (暂时禁用——隔离崩溃源)
         expression_process_pending();
         wifi_process_pending_ui();
+        screenshot_capture();
 
         // v5.0: IMU 体感检测 (暂时禁用——隔离崩溃源)
         MotionAction ma = MOTION_NONE; // motion_poll();

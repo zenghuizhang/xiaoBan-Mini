@@ -4,7 +4,7 @@ idf_component_register(
         "ui/theme_v3.cpp"
         "ui/expressions.cpp"
         "ui/wifi_config.cpp"
-                        # "ui/screenshot.c"  # 截图已禁用
+        "ui/screenshot.c"
         "ui/font_zh_14.c"
         "ui/font_zh_22.c"
         "ui/qrcode.c"

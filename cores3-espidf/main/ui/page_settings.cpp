@@ -7,6 +7,7 @@
 #include "page_ota.h"
 #include "page_console.h"
 #include "font_zh_14.h"
+#include <esp_netif.h>
 #include <M5Unified.h>
 #include <esp_log.h>
 
@@ -28,6 +29,7 @@ static item_t G_AUDIO[] = {
 };
 static item_t G_NETWORK[] = {
     {"Wi-Fi",  "Wi-Fi",       "",        0},
+    {"IP地址", "IP Address",  "",        0},
     {"升级",   "Update",      "v6.2",    0},
 };
 static item_t G_PRIVACY[] = {
@@ -40,7 +42,7 @@ static item_t G_SYSTEM[] = {
     {"恢复出厂","Factory reset","",      0},
 };
 static item_t* GROUP_DATA[] = {G_GENERAL, G_AUDIO, G_NETWORK, G_PRIVACY, G_SYSTEM};
-static int GROUP_LEN[] = {3, 2, 2, 2, 3};
+static int GROUP_LEN[] = {3, 2, 3, 2, 3};
 
 // 组名双语
 static const char* GRP_CN[] = {"通用", "音频", "网络", "隐私", "系统"};
@@ -221,6 +223,23 @@ lv_obj_t* page_settings_create(lv_obj_t* parent) {
     G_GENERAL[0].value = cur == THEME_TECH ? "Tech" : cur == THEME_CHILD ? "Child" : "Dev";
     extern bool s_lang_cn;
     G_GENERAL[1].value = s_lang_cn ? "CN" : "EN";
+    // WiFi: SSID name when connected
+    static char _ssid_buf[32], _ip_buf[32];
+    if (wifi_get_state() == WIFI_CONNECTED) {
+        snprintf(_ssid_buf, sizeof(_ssid_buf), "%s", wifi_get_ssid());
+        G_NETWORK[0].value = _ssid_buf;
+        // IP address
+        esp_netif_t *nif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+        esp_netif_ip_info_t ip;
+        if (nif && esp_netif_get_ip_info(nif, &ip) == ESP_OK)
+            snprintf(_ip_buf, sizeof(_ip_buf), IPSTR, IP2STR(&ip.ip));
+        else
+            snprintf(_ip_buf, sizeof(_ip_buf), "---");
+        G_NETWORK[1].value = _ip_buf;
+    } else {
+        G_NETWORK[0].value = _T("未连接","Offline");
+        G_NETWORK[1].value = "---";
+    }
 
     // Scrollable list
     lv_obj_t* list = lv_obj_create(s_page);

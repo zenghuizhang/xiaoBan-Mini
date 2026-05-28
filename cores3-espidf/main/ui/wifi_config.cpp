@@ -2,6 +2,7 @@
 #include "theme_v3.h"
 #include "expressions.h"
 #include "qrcode.h"
+#include "screenshot.h"
 // 设备端配网UI用emoji就够了，中文主要在Web配网页面
 // #include "font_chinese.h"
 #include <freertos/FreeRTOS.h>
@@ -96,6 +97,7 @@ static WifiConfigUIStep s_ui_step = WIFI_UI_STEP_AP;
 static volatile bool s_pending_wifi_ui = false;
 static volatile int  s_pending_wifi_step = 0;
 static volatile bool s_pending_qr_close = false;
+static volatile bool s_pending_scr_start = false;
 
 // 事件组位定义
 #define WIFI_CONNECTED_BIT BIT0
@@ -276,6 +278,16 @@ static esp_err_t _http_connect_handler(httpd_req_t *req)
 }
 
 // Captive Portal 重定向处理
+// Captive Portal 检测: 返回 204 No Content (告诉手机"无需登录")
+// 这样手机不会强制弹出配网页，用户可以自由访问 /screen.bmp
+static esp_err_t _http_captive_no_content(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "204 No Content");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+// 配网入口: 302 到主页 (手动打开浏览器时触发)
 static esp_err_t _http_captive_handler(httpd_req_t *req)
 {
     httpd_resp_set_status(req, "302 Found");
@@ -284,7 +296,7 @@ static esp_err_t _http_captive_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// 404 处理器 → 所有未匹配的 URI 也重定向到配网主页
+// 404 → 配网主页
 static esp_err_t _http_404_handler(httpd_req_t *req, httpd_err_code_t err)
 {
     return _http_captive_handler(req);
@@ -325,23 +337,25 @@ static httpd_handle_t _start_webserver(void)
         };
         httpd_register_uri_handler(server, &connect_uri);
 
-        // Captive Portal 常见检测地址
+        // Captive Portal 检测: 返回 204, 手机不弹窗, 用户可手动打开配网页或 /screen.bmp
         httpd_uri_t captive_uris[] = {
-            {.uri = "/generate_204", .method = HTTP_GET, .handler = _http_captive_handler, .user_ctx = NULL},
-            {.uri = "/gen_204", .method = HTTP_GET, .handler = _http_captive_handler, .user_ctx = NULL},
-            {.uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = _http_captive_handler, .user_ctx = NULL},
-            {.uri = "/ncsi.txt", .method = HTTP_GET, .handler = _http_captive_handler, .user_ctx = NULL},
-            {.uri = "/redirect", .method = HTTP_GET, .handler = _http_captive_handler, .user_ctx = NULL},
+            {.uri = "/generate_204", .method = HTTP_GET, .handler = _http_captive_no_content, .user_ctx = NULL},
+            {.uri = "/gen_204", .method = HTTP_GET, .handler = _http_captive_no_content, .user_ctx = NULL},
+            {.uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = _http_captive_no_content, .user_ctx = NULL},
+            {.uri = "/ncsi.txt", .method = HTTP_GET, .handler = _http_captive_no_content, .user_ctx = NULL},
+            {.uri = "/redirect", .method = HTTP_GET, .handler = _http_captive_no_content, .user_ctx = NULL},
         };
 
         for (size_t i = 0; i < sizeof(captive_uris)/sizeof(captive_uris[0]); i++) {
             httpd_register_uri_handler(server, &captive_uris[i]);
         }
 
+        // Screenshot endpoint
+        screenshot_register(server);
+
         // 404 → 302 redirect (catch-all for captive portal)
         httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, _http_404_handler);
-
-        ESP_LOGI(TAG, "✓ Web服务器 + DNS劫持 + CaptivePortal 已就绪");
+        ESP_LOGI(TAG, "✓ Web服务器 + DNS劫持 + CaptivePortal + Screenshot 已就绪");
         return server;
     }
 
@@ -458,6 +472,7 @@ static void _wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t 
 
             case WIFI_EVENT_STA_DISCONNECTED: {
                 s_wifi_state = WIFI_DISCONNECTED;
+                screenshot_sta_stop();
                 ESP_LOGI(TAG, "WiFi 断开连接");
                 if (s_wifi_ui && s_ui_step == WIFI_UI_STEP_CONNECTING) {
                     s_pending_qr_close = true;
@@ -486,6 +501,9 @@ static void _wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t 
 
             s_wifi_state = WIFI_CONNECTED;
             xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
+            // 延迟到主线程启动截图服务 (httpd必须在主任务启动)
+            s_pending_scr_start = true;
 
             // 延迟到主线程: 关闭 QR, 显示成功
             s_pending_qr_close = true;
@@ -668,6 +686,11 @@ static ap_ctx_t* s_ap_ctx = NULL;
 // 主线程调用: 处理延迟的 UI 操作
 void wifi_process_pending_ui(void)
 {
+    if (s_pending_scr_start) {
+        s_pending_scr_start = false;
+        ESP_LOGI(TAG, "Starting screenshot server from main task...");
+        screenshot_sta_start();
+    }
     if (s_pending_qr_close) {
         s_pending_qr_close = false;
         qrcode_close();
