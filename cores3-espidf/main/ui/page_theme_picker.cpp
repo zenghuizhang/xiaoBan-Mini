@@ -4,10 +4,15 @@
 #include "theme_v3.h"
 #include "expressions.h"
 #include "font_zh_14.h"
+#include "robot_memory.h"
 #include <esp_log.h>
 #include <string.h>
 
 static const char* TAG = "THEME";
+
+static const char* _T(const char* cn, const char* en) {
+    extern bool s_lang_cn; return s_lang_cn ? cn : en;
+}
 
 typedef struct { ThemeV3 id; const char* name; lv_color_t swatch; } theme_choice_t;
 
@@ -19,7 +24,8 @@ static const theme_choice_t THEMES[4] = {
 };
 
 static const lv_font_t* _F(void) {
-    return (const lv_font_t*)&font_zh_14;
+    extern bool s_lang_cn;
+    return s_lang_cn ? (const lv_font_t*)&font_zh_14 : &lv_font_montserrat_14;
 }
 
 static void back_cb(lv_event_t* e) {
@@ -36,6 +42,7 @@ static void back_cb(lv_event_t* e) {
 static void pick_cb(lv_event_t* e) {
     ThemeV3 id = (ThemeV3)(intptr_t)lv_event_get_user_data(e);
     theme_v3_switch(id);
+    memory_save_theme((int)id);
     ESP_LOGI(TAG, "Theme switched to %d", (int)id);
     // Walk up to root and delete
     lv_obj_t* t = (lv_obj_t*)lv_event_get_target(e);
@@ -62,7 +69,7 @@ lv_obj_t* page_theme_picker_create(lv_obj_t* parent) {
     lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
 
     xb_statusbar_create(root);
-    lv_obj_t* tb = xb_topbar_create(root, "Theme", true);
+    lv_obj_t* tb = xb_topbar_create(root, _T("主题", "Theme"), true);
     lv_obj_set_style_text_font(lv_obj_get_child(tb, 1), _F(), 0);
     lv_obj_add_flag(tb, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(tb, back_cb, LV_EVENT_CLICKED, NULL);

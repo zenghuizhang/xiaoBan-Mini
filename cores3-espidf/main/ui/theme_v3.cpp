@@ -1,4 +1,4 @@
-// v6.7 4-theme palette (lv_color_hex, 对齐 theme_tokens.h)
+// v6.7 4-theme palette — RGB565 grid-snapped (R/B×8, G×4)
 #include "theme_v3.h"
 #include <esp_log.h>
 
@@ -7,21 +7,21 @@ static ThemeV3 cur = THEME_TECH;
 
 static const theme_colors_t P[4] = {
     // TECH dark cyan
-    {lv_color_hex(0x000000),lv_color_hex(0x0A1E28),lv_color_hex(0x22D3EE),lv_color_hex(0x0F5A78),
-     lv_color_hex(0xB4EBFF),lv_color_hex(0x6EAAC8),lv_color_hex(0x14506E),lv_color_hex(0xF43F5E),
-     lv_color_hex(0x22C55E),lv_color_hex(0x33C5FF),0},
+    {lv_color_hex(0x000000),lv_color_hex(0x081C28),lv_color_hex(0x20D0E8),lv_color_hex(0x085878),
+     lv_color_hex(0xB0E8F8),lv_color_hex(0x68A8C8),lv_color_hex(0x105068),lv_color_hex(0xF03C58),
+     lv_color_hex(0x20C458),lv_color_hex(0x30C4F8),0},
     // LAVENDER light purple
-    {lv_color_hex(0xFAF5FF),lv_color_hex(0xFFFFFF),lv_color_hex(0x9333EA),lv_color_hex(0xA855F7),
-     lv_color_hex(0x4C1D95),lv_color_hex(0x7C3AED),lv_color_hex(0xE9D5FF),lv_color_hex(0xEF4444),
-     lv_color_hex(0x22C55E),lv_color_hex(0xA855F7),1},
-    // CHILD light coral
-    {lv_color_hex(0xFFF9E6),lv_color_hex(0xFFFFFF),lv_color_hex(0xFF7F50),lv_color_hex(0xFFAA78),
-     lv_color_hex(0xC85A28),lv_color_hex(0xD28C5A),lv_color_hex(0xFFC8A0),lv_color_hex(0xF43F5E),
-     lv_color_hex(0x22C55E),lv_color_hex(0xFFAA78),1},
+    {lv_color_hex(0xF8F4F8),lv_color_hex(0xFFFFFF),lv_color_hex(0x9030E8),lv_color_hex(0xA854F0),
+     lv_color_hex(0x481C90),lv_color_hex(0x7838E8),lv_color_hex(0xE8D4F8),lv_color_hex(0xE84440),
+     lv_color_hex(0x20C458),lv_color_hex(0xA854F0),1},
+    // CHILD light coral (warm-tuned for GC9A01)
+    {lv_color_hex(0xF8F0D0),lv_color_hex(0xFFFFFF),lv_color_hex(0xF87C50),lv_color_hex(0xF8A878),
+     lv_color_hex(0xC85828),lv_color_hex(0xD08C58),lv_color_hex(0xF8C8A0),lv_color_hex(0xF03C58),
+     lv_color_hex(0x20C458),lv_color_hex(0xF8A878),1},
     // COCOA dark rose
-    {lv_color_hex(0x2D1B0E),lv_color_hex(0x3F2B20),lv_color_hex(0xFB7185),lv_color_hex(0xFDA4AF),
-     lv_color_hex(0xFEF3C7),lv_color_hex(0xD9C1A0),lv_color_hex(0x573D2C),lv_color_hex(0xEF4444),
-     lv_color_hex(0x22C55E),lv_color_hex(0xFDA4AF),0},
+    {lv_color_hex(0x281808),lv_color_hex(0x382820),lv_color_hex(0xF87080),lv_color_hex(0xF8A4A8),
+     lv_color_hex(0xF8F0C0),lv_color_hex(0xD8C0A0),lv_color_hex(0x503C28),lv_color_hex(0xE84440),
+     lv_color_hex(0x20C458),lv_color_hex(0xF8A4A8),0},
 };
 
 void theme_v3_init(ThemeV3 t){cur=t;lv_obj_set_style_bg_color(lv_screen_active(),P[cur].bg,0);}

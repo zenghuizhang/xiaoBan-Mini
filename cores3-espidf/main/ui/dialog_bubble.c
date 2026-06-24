@@ -5,7 +5,7 @@
 
 static lv_obj_t *bubble = NULL;
 static lv_timer_t *bubble_timer = NULL;
-static bool s_lang_cn = true;
+extern bool s_lang_cn;  // 同步全局语言设置 (app_main.cpp)
 
 void dialog_bubble_set_lang(bool cn) { s_lang_cn = cn; }
 bool dialog_bubble_get_lang(void) { return s_lang_cn; }

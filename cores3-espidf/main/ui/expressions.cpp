@@ -5,6 +5,7 @@
  * 眩晕: lv_draw_arc 螺旋线
  */
 #include "expressions.h"
+#include "theme_v3.h"
 #include <esp_log.h>
 #include <esp_random.h>
 #include <freertos/FreeRTOS.h>
@@ -167,7 +168,7 @@ static void _face_draw_cb(lv_event_t *e)
     switch (expr) {
     case EXPR_IDLE:
         if (blinking) { base_lh = 1; base_rh = 1; }
-        // 呼吸脉冲会在动画层处理
+        ly_off = ry_off = -15;  // PRD: 眼睛上移，视觉居中
         break;
     case EXPR_DEEP_SLEEP:
         base_lh = base_rh = 16; ly_off = ry_off = 5;
@@ -299,9 +300,11 @@ static void _face_draw_cb(lv_event_t *e)
     // v3.10: 眩晕"原地转圈" — 眼睛位置固定, 螺旋弧线旋转
 
 
-    // 发光
-    _draw_glow(layer, lx, ey + ly_off, lw, lh, lr, fg);
-    _draw_glow(layer, rx, ey + ry_off, rw, rh, rr, fg);
+    // 发光 (白天模式不发光, PRD 规范)
+    if (!theme_get_colors()->is_light) {
+        _draw_glow(layer, lx, ey + ly_off, lw, lh, lr, fg);
+        _draw_glow(layer, rx, ey + ry_off, rw, rh, rr, fg);
+    }
 
     // --- 左眼 ---
     if (expr == EXPR_DIZZY) {
@@ -756,7 +759,7 @@ static void _carousel_callback(TimerHandle_t timer)
 {
     next_random_expr = esp_random() % 16;  // 0-5 随机
     pending_carousel = true;
-    uint32_t next = 5000 + (esp_random() % 3000);
+    uint32_t next = 4000 + (esp_random() % 3000);  // PRD: 4-7s
     xTimerChangePeriod(carousel_timer, pdMS_TO_TICKS(next), 0);
 }
 
@@ -774,7 +777,7 @@ void expressions_init(void)
     lv_obj_add_event_cb(face_container, _face_draw_cb, LV_EVENT_DRAW_POST, NULL);
 
     blink_timer = xTimerCreate("blink", pdMS_TO_TICKS(4000), pdTRUE, NULL, _blink_callback);
-    carousel_timer = xTimerCreate("carousel", pdMS_TO_TICKS(5000), pdTRUE, NULL, _carousel_callback);
+    carousel_timer = xTimerCreate("carousel", pdMS_TO_TICKS(4000), pdTRUE, NULL, _carousel_callback);
     _render_expression(EXPR_IDLE);
     uint32_t first = 3000 + (esp_random() % 2000);
     xTimerChangePeriod(blink_timer, pdMS_TO_TICKS(first), 0);

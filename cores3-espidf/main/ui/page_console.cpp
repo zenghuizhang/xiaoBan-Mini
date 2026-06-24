@@ -4,6 +4,7 @@
 #include "theme_v3.h"
 #include "expressions.h"
 #include "font_zh_14.h"
+#include "robot_memory.h"
 #include <stdio.h>
 #include <esp_log.h>
 
@@ -37,7 +38,9 @@ static void _btn_cb_expr(lv_event_t* e) {
 }
 static void _btn_cb_theme(lv_event_t* e) {
     ThemeV3 c=theme_v3_get_current();
-    theme_v3_switch(c==THEME_TECH?THEME_LAVENDER:c==THEME_LAVENDER?THEME_CHILD:c==THEME_CHILD?THEME_COCOA:THEME_TECH);
+    ThemeV3 n=(c==THEME_TECH)?THEME_LAVENDER:(c==THEME_LAVENDER)?THEME_CHILD:(c==THEME_CHILD)?THEME_COCOA:THEME_TECH;
+    theme_v3_switch(n);
+    memory_save_theme((int)n);
     expression_refresh_theme();
 }
 static void _btn_cb_imu(lv_event_t* e) {

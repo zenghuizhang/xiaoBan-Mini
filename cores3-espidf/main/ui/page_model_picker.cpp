@@ -4,10 +4,15 @@
 #include "theme_v3.h"
 #include "expressions.h"
 #include "font_zh_14.h"
+#include "chat_llm.h"
 #include <esp_log.h>
 #include <string.h>
 
 static const char* TAG = "MODEL";
+
+static const char* _T(const char* cn, const char* en) {
+    extern bool s_lang_cn; return s_lang_cn ? cn : en;
+}
 
 typedef struct { const char* id; const char* name; const char* hint; } model_t;
 
@@ -37,7 +42,8 @@ static void back_cb(lv_event_t* e) {
 
 static void pick_cb(lv_event_t* e) {
     const char* id = (const char*)lv_event_get_user_data(e);
-    ESP_LOGI(TAG, "XB_EVT_MODEL_CHANGED: %s", id);
+    chat_llm_set_model(id);
+    ESP_LOGI(TAG, "Model changed: %s", id);
     // Walk up to root and delete
     lv_obj_t* t = (lv_obj_t*)lv_event_get_target(e);
     while (t) {
@@ -62,7 +68,7 @@ lv_obj_t* page_model_picker_create(lv_obj_t* parent) {
     lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
 
     xb_statusbar_create(root);
-    lv_obj_t* tb = xb_topbar_create(root, "Model", true);
+    lv_obj_t* tb = xb_topbar_create(root, _T("模型", "Model"), true);
     lv_obj_set_style_text_font(lv_obj_get_child(tb, 1), _F(), 0);
     lv_obj_add_flag(tb, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(tb, back_cb, LV_EVENT_CLICKED, NULL);

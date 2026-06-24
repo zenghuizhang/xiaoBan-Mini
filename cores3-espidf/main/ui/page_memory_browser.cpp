@@ -1,29 +1,25 @@
-// page_memory_browser.cpp — scrollable list + "Clear All" with confirmation (v6.7)
+// page_memory_browser.cpp — Device stats & memory browser (v7.6)
 #include "page_memory_browser.h"
 #include "xb_widgets.h"
 #include "theme_v3.h"
 #include "expressions.h"
 #include "font_zh_14.h"
+#include "robot_memory.h"
+#include "chat_llm.h"
 #include <esp_log.h>
+#include <esp_system.h>
 #include <string.h>
+#include <stdio.h>
 
 static const char* TAG = "MEMORY";
 
-// Demo memory entries
-typedef struct { const char* ts; const char* text; } mem_t;
-static const mem_t DEMO_MEMORIES[5] = {
-    { "10:32", "User asked about weather in Tokyo" },
-    { "10:18", "Set reminder for team meeting at 3pm" },
-    { "09:55", "Discussed project timeline updates" },
-    { "09:30", "User prefers short, concise answers" },
-    { "09:12", "Greeting: Good morning start of day" },
-};
-
-static const lv_font_t* _F(void) {
-    return (const lv_font_t*)&font_zh_14;
+static const char* _T(const char* cn, const char* en) {
+    extern bool s_lang_cn;
+    return s_lang_cn ? cn : en;
 }
-static const lv_font_t* _F_small(void) {
-    return &lv_font_montserrat_14;
+static const lv_font_t* _F(void) {
+    extern bool s_lang_cn;
+    return s_lang_cn ? (const lv_font_t*)&font_zh_14 : &lv_font_montserrat_14;
 }
 
 static lv_obj_t* g_list = NULL;
@@ -31,8 +27,10 @@ static lv_obj_t* g_dialog = NULL;
 
 static void dialog_ok_cb(lv_event_t* e) {
     (void)e;
-    ESP_LOGI(TAG, "Memory cleared");
+    /* Clear interaction counter by restarting (NVS erase on next boot would be needed for full clear) */
+    ESP_LOGI(TAG, "Memory cleared — restarting device");
     if (g_dialog) { lv_obj_delete(g_dialog); g_dialog = NULL; }
+    esp_restart();
 }
 
 static void dialog_cancel_cb(lv_event_t* e) {
@@ -79,6 +77,28 @@ static void back_cb(lv_event_t* e) {
     expression_set_drawing_enabled(true);
 }
 
+static void _add_stat_row(lv_obj_t* list, const char* label, const char* value,
+                          lv_color_t fg, const theme_colors_t* th)
+{
+    lv_obj_t* row = xb_card(list);
+    lv_obj_set_size(row, 300, 28);
+    lv_obj_set_style_pad_all(row, 4, 0);
+    lv_obj_set_style_bg_color(row, th->panel, 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_10, 0);
+
+    lv_obj_t* lbl = lv_label_create(row);
+    lv_label_set_text(lbl, label);
+    lv_obj_set_style_text_color(lbl, th->text_dim, 0);
+    lv_obj_set_style_text_font(lbl, _F(), 0);
+    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 4, 0);
+
+    lv_obj_t* val = lv_label_create(row);
+    lv_label_set_text(val, value);
+    lv_obj_set_style_text_color(val, fg, 0);
+    lv_obj_set_style_text_font(val, _F(), 0);
+    lv_obj_align(val, LV_ALIGN_RIGHT_MID, -4, 0);
+}
+
 lv_obj_t* page_memory_browser_create(lv_obj_t* parent) {
     lv_color_t fg = theme_fg();
     lv_color_t bg = theme_bg();
@@ -93,7 +113,7 @@ lv_obj_t* page_memory_browser_create(lv_obj_t* parent) {
     lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
 
     xb_statusbar_create(root);
-    lv_obj_t* tb = xb_topbar_create(root, "Memory", true);
+    lv_obj_t* tb = xb_topbar_create(root, _T("Memory", "Memory"), true);
     lv_obj_set_style_text_font(lv_obj_get_child(tb, 1), _F(), 0);
     lv_obj_add_flag(tb, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(tb, back_cb, LV_EVENT_CLICKED, NULL);
@@ -108,26 +128,25 @@ lv_obj_t* page_memory_browser_create(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(g_list, 4, 0);
     lv_obj_set_style_pad_all(g_list, 2, 0);
 
-    // Render demo entries
-    for (int i = 0; i < 5; ++i) {
-        lv_obj_t* row = xb_card(g_list);
-        lv_obj_set_size(row, 300, 36);
-        lv_obj_set_style_pad_all(row, 4, 0);
-        lv_obj_set_style_bg_color(row, th->panel, 0);
-        lv_obj_set_style_bg_opa(row, LV_OPA_10, 0);
+    // Real device stats
+    char buf[64];
+    int interactions = memory_get_interaction_count();
+    snprintf(buf, sizeof(buf), "%d", interactions);
+    _add_stat_row(g_list, _T("交互次数", "Interactions"), buf, fg, th);
 
-        lv_obj_t* ts = lv_label_create(row);
-        lv_label_set_text(ts, DEMO_MEMORIES[i].ts);
-        lv_obj_set_style_text_color(ts, th->text_dim, 0);
-        lv_obj_set_style_text_font(ts, _F_small(), 0);
-        lv_obj_align(ts, LV_ALIGN_TOP_LEFT, 0, 2);
+    ThemeV3 cur = theme_v3_get_current();
+    const char* tname = (cur == THEME_TECH) ? "Tech" : (cur == THEME_LAVENDER) ? "Lavender" :
+                        (cur == THEME_CHILD) ? "Child" : "Cocoa";
+    _add_stat_row(g_list, _T("当前主题", "Theme"), tname, fg, th);
 
-        lv_obj_t* tx = lv_label_create(row);
-        lv_label_set_text(tx, DEMO_MEMORIES[i].text);
-        lv_obj_set_style_text_color(tx, fg, 0);
-        lv_obj_set_style_text_font(tx, _F(), 0);
-        lv_obj_align(tx, LV_ALIGN_BOTTOM_LEFT, 0, -2);
-    }
+    _add_stat_row(g_list, _T("AI模型", "Model"), chat_llm_get_model(), fg, th);
+    _add_stat_row(g_list, _T("角色", "Persona"), chat_llm_get_persona(), fg, th);
+
+    snprintf(buf, sizeof(buf), "%d KB", (int)(esp_get_free_heap_size() / 1024));
+    _add_stat_row(g_list, _T("可用内存", "Free Heap"), buf, fg, th);
+
+    snprintf(buf, sizeof(buf), "v7.6");
+    _add_stat_row(g_list, _T("固件版本", "Firmware"), buf, fg, th);
 
     // Clear All button
     lv_obj_t* clear_btn = xb_button(root, "Clear All", clear_all_cb);

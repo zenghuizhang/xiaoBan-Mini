@@ -7,6 +7,11 @@
 extern "C" {
 #endif
 
+#define APP_CONFIG_API_KEY_MAX    128
+#define APP_CONFIG_BASE_URL_MAX   128
+#define APP_CONFIG_MODEL_MAX      32
+#define APP_CONFIG_PERSONA_MAX    16
+
 typedef struct {
     char wifi_ssid[33];
     char wifi_password[65];
@@ -14,6 +19,11 @@ typedef struct {
     int language;
     int brightness;
     int volume;
+    /* LLM API config */
+    char api_key[APP_CONFIG_API_KEY_MAX];
+    char base_url[APP_CONFIG_BASE_URL_MAX];
+    char model[APP_CONFIG_MODEL_MAX];
+    char persona[APP_CONFIG_PERSONA_MAX];
 } app_config_t;
 
 void app_config_init(void);

@@ -1,23 +1,15 @@
-// page_skills.cpp — Skills list: Installed | Store tabs, 2-col grid
+// page_skills.cpp — Skills list: Installed | Store tabs, 2-col grid (v7.6)
 #include "page_skills.h"
 #include "page_skill_detail.h"
 #include "xb_widgets.h"
 #include "theme_v3.h"
 #include "expressions.h"
+#include "skill_manager.h"
+#include <esp_log.h>
+#include <stdlib.h>
+#include <string.h>
 
-typedef struct {
-    const char* name;
-    const char* desc;
-    bool installed;
-} skill_t;
-
-static const skill_t SKILLS[] = {
-    {"Voice",     "Speech synthesis & recognition", true},
-    {"Weather",   "Current & 7-day forecasts",      true},
-    {"Timer",     "Countdown & alarm clock",        true},
-    {"Translate", "Multi-language translation",     false},
-    {"Parrot",    "Record & repeat speech clips",   false},
-};
+static const char* TAG = "SKILLS";
 
 static lv_obj_t* g_grid_installed = NULL;
 static lv_obj_t* g_grid_store = NULL;
@@ -30,41 +22,57 @@ static void on_back(lv_event_t* e) {
 }
 
 static void on_skill_click(lv_event_t* e) {
-    const skill_t* sk = (const skill_t*)lv_event_get_user_data(e);
-    if (!sk || !g_page) return;
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    skill_info_t* list = NULL;
+    size_t count = 0;
+    if (skill_list_installed(&list, &count) != ESP_OK || !list) return;
+    if ((size_t)idx >= count) { free(list); return; }
+
+    char name_copy[64];
+    strlcpy(name_copy, list[idx].name, sizeof(name_copy));
+    free(list);
+
+    if (!g_page) return;
     lv_obj_delete(g_page);
     g_page = NULL;
-    page_skill_detail_create(lv_screen_active(), sk->name);
+    page_skill_detail_create(lv_screen_active(), name_copy);
 }
 
 static void render_grid(lv_obj_t* grid, bool installed_only) {
     lv_color_t fg = theme_fg();
     lv_obj_clean(grid);
-    int n = sizeof(SKILLS) / sizeof(SKILLS[0]);
-    for (int i = 0; i < n; ++i) {
-        if (installed_only && !SKILLS[i].installed) continue;
+
+    skill_info_t* list = NULL;
+    size_t count = 0;
+    if (skill_list_installed(&list, &count) != ESP_OK || !list) {
+        ESP_LOGW(TAG, "skill_list_installed failed");
+        return;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        if (installed_only && !list[i].installed) continue;
 
         lv_obj_t* card = xb_card(grid);
         lv_obj_set_size(card, 148, 54);
         lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_add_event_cb(card, on_skill_click, LV_EVENT_CLICKED, (void*)&SKILLS[i]);
+        lv_obj_add_event_cb(card, on_skill_click, LV_EVENT_CLICKED, (void*)(intptr_t)i);
 
         // Status dot: solid = installed, dim = store
         lv_obj_t* dot = lv_obj_create(card);
         lv_obj_set_size(dot, 8, 8);
         lv_obj_set_style_radius(dot, 4, 0);
         lv_obj_set_style_bg_color(dot, fg, 0);
-        lv_obj_set_style_bg_opa(dot, SKILLS[i].installed ? LV_OPA_COVER : LV_OPA_30, 0);
+        lv_obj_set_style_bg_opa(dot, list[i].installed ? LV_OPA_COVER : LV_OPA_30, 0);
         lv_obj_set_style_border_width(dot, 0, 0);
         lv_obj_align(dot, LV_ALIGN_LEFT_MID, 6, 0);
 
         lv_obj_t* nm = lv_label_create(card);
-        lv_label_set_text(nm, SKILLS[i].name);
+        lv_label_set_text(nm, list[i].name);
         lv_obj_set_style_text_color(nm, fg, 0);
         lv_obj_align(nm, LV_ALIGN_TOP_LEFT, 22, 4);
 
         lv_obj_t* ds = lv_label_create(card);
-        lv_label_set_text(ds, SKILLS[i].desc);
+        lv_label_set_text(ds, list[i].summary);
         lv_obj_set_style_text_color(ds, fg, 0);
         lv_obj_set_style_text_opa(ds, LV_OPA_50, 0);
         lv_obj_set_style_text_font(ds, &lv_font_montserrat_14, 0);
@@ -72,6 +80,7 @@ static void render_grid(lv_obj_t* grid, bool installed_only) {
         lv_obj_set_width(ds, 120);
         lv_label_set_long_mode(ds, LV_LABEL_LONG_WRAP);
     }
+    free(list);
 }
 
 static void on_tab_changed(lv_event_t* e) {

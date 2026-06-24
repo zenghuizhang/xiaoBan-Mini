@@ -35,6 +35,7 @@
 #include "ui/page_ota.h"
 #include "ui/page_settings.h"
 #include "robot_memory.h"
+#include "settings_store.h"
 #include "motion_controller.h"
 #include "ui/icons/icons.h"
 #include "ui/scenario_overlay.h"
@@ -47,6 +48,8 @@
 #include "ui/page_persona_grid.h"
 #include "ui/page_memory_browser.h"
 #include "ui/tech_ui.h"
+#include "ui/chat_llm.h"
+#include "skill_manager.h"
 #include <math.h>
 
 static const char *TAG = "XIAOBAN";
@@ -121,6 +124,7 @@ static void _radial_menu_cb(RadialMenuAction action)
         ThemeV3 cur = theme_v3_get_current();
         ThemeV3 n = (cur == THEME_TECH) ? THEME_CHILD : (cur == THEME_CHILD) ? THEME_COCOA : THEME_TECH;
         theme_v3_switch(n);
+        memory_save_theme((int)n);
         expression_refresh_theme();
         break;
     }
@@ -270,7 +274,10 @@ static void _create_menu_overlay(void)
 // ========== v6.2 SettingsOverlay → page_settings.c ==========
 static uint8_t s_bright = 180, s_vol = 140;
 
+bool g_breath_paused = false;  // extern for page_settings.cpp
+
 static void _settings_show(void) {
+    g_breath_paused = true;
     if (menu_overlay) { lv_obj_delete(menu_overlay); menu_overlay = NULL; menu_shown = false; }
     page_settings_create(lv_screen_active());
 }
@@ -357,9 +364,16 @@ extern "C" void app_main(void)
     memory_init();
     audio_init();
     motion_init();
+    skill_manager_init();
 
     // 默认 Tech 主题 (后续可通过 NVS 恢复偏好)
-    ThemeV3 saved_theme = THEME_TECH;  // memory_load_theme();
+    ThemeV3 saved_theme = (ThemeV3)memory_load_theme();
+
+    // 从 NVS 恢复语言偏好
+    char lang_buf[4] = "cn";
+    settings_store_get_string("lang", lang_buf, sizeof(lang_buf), "cn");
+    s_lang_cn = (strcmp(lang_buf, "cn") == 0);
+    dialog_bubble_set_lang(s_lang_cn);
 
     // ==============================================
     // v5.0 开机动画: 3.5s (对齐 BootAnimation.tsx)
@@ -392,6 +406,7 @@ extern "C" void app_main(void)
     // v6.1: 自然呼吸亮度 (8s周期, cubic easing)
     lv_timer_create([](lv_timer_t *t){
         static int phase = 0;
+        if (g_breath_paused) return;
         phase = (phase + 1) % 80;
         float p = phase * M_PI / 40.0f;
         float s = sinf(p);
@@ -410,8 +425,11 @@ extern "C" void app_main(void)
     // ==============================================
     wifi_init();
 
+    // 初始化 LLM 引擎 (claw_core)
+    chat_llm_init();
+
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "系统启动完成! xiaoBan v6.7");
+    ESP_LOGI(TAG, "系统启动完成! xiaoBan v7.6");
     ESP_LOGI(TAG, "========================================");
 
     // ==============================================
@@ -442,13 +460,13 @@ extern "C" void app_main(void)
             expr_pending = false;
         }
 
-        // 表情轮播 (暂时禁用——隔离崩溃源)
+        // 表情轮播
         expression_process_pending();
         wifi_process_pending_ui();
         screenshot_capture();
 
-        // v5.0: IMU 体感检测 (暂时禁用——隔离崩溃源)
-        MotionAction ma = MOTION_NONE; // motion_poll();
+        // v5.0: IMU 体感检测
+        MotionAction ma = motion_poll();
         if (ma != MOTION_NONE) {
             switch (ma) {
             case MOTION_TILT_FORWARD: expression_set(EXPR_CURIOUS, true); break;
@@ -461,15 +479,16 @@ extern "C" void app_main(void)
             }
         }
 
-        // v5.0: 早安问候检测 (暂时禁用)
-        //static bool morning_checked = false;
-        //if (!morning_checked && now > 10000) {
-        //    morning_checked = true;
-        //    if (memory_should_morning_greet()) {
-        //        dialog_bubble_show(lv_screen_active(), DIALOG_MORNING, 4000);
-        //        expression_set(EXPR_MORNING, true);
-        //    }
-        //}
+        // v5.0: 早安问候检测
+        static bool morning_checked = false;
+        if (!morning_checked && now > 10000) {
+            morning_checked = true;
+            if (memory_should_morning_greet()) {
+                dialog_bubble_show(lv_screen_active(), DIALOG_MORNING, 4000);
+                expression_set(EXPR_MORNING, true);
+                memory_save_last_date();
+            }
+        }
 
         // ✅ LVGL 统一处理触屏输入
         lv_timer_handler();

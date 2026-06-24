@@ -1,4 +1,4 @@
-enum { THEME_TECH = 0, THEME_CHILD = 1, THEME_DEV = 2 };
+enum { THEME_TECH = 0, THEME_LAVENDER = 1, THEME_CHILD = 2, THEME_COCOA = 3 };
 /* v5.0 NVS Memory */
 #include "robot_memory.h"
 #include <nvs_flash.h>
@@ -31,7 +31,7 @@ int memory_load_theme(void)
     if (!s_nvs) return THEME_TECH;
     uint8_t v = THEME_TECH;
     nvs_get_u8(s_nvs, "theme", &v);
-    if (v > 2) v = 0;
+    if (v > 3) v = 0;
     ESP_LOGI(TAG, "theme loaded: %d", (int)v);
     return (int)v;
 }

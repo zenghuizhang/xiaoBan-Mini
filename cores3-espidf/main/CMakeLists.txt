@@ -39,6 +39,7 @@ idf_component_register(
         "ui/page_theme_picker.cpp"
         "ui/page_persona_grid.cpp"
         "ui/page_memory_browser.cpp"
+        "ui/chat_llm.cpp"
     INCLUDE_DIRS
         "."
         "ui"
@@ -56,6 +57,9 @@ idf_component_register(
         "feedback"
         "wifi_manager"
         "app_config"
+        "settings"
+        "claw_core"
+        "skill_manager"
         "cmd_wifi"
         "lv_chinese_font"
         "bsp_cores3"

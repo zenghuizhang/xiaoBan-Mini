@@ -7,6 +7,9 @@
 #include "page_ota.h"
 #include "page_console.h"
 #include "font_zh_14.h"
+#include "robot_memory.h"
+#include "dialog_bubble.h"
+#include "settings_store.h"
 #include <esp_netif.h>
 #include <M5Unified.h>
 #include <esp_log.h>
@@ -70,6 +73,7 @@ static void on_back(lv_event_t* e) {
     (void)e;
     if (s_page) { lv_obj_delete(s_page); s_page = NULL; }
     expression_set_drawing_enabled(true);
+    extern bool g_breath_paused; g_breath_paused = false;
 }
 
 static void on_item(lv_event_t* e) {
@@ -79,7 +83,9 @@ static void on_item(lv_event_t* e) {
     // Theme
     if (strcmp(it->label_en, "Theme") == 0) {
         ThemeV3 c = theme_v3_get_current();
-        theme_v3_switch(c == THEME_TECH ? THEME_CHILD : c == THEME_CHILD ? THEME_COCOA : THEME_TECH);
+        ThemeV3 n = (c == THEME_TECH) ? THEME_CHILD : (c == THEME_CHILD) ? THEME_COCOA : THEME_TECH;
+        theme_v3_switch(n);
+        memory_save_theme((int)n);
         expression_refresh_theme();
         lv_obj_delete(s_page); s_page = NULL;
         page_settings_create(lv_screen_active());
@@ -89,6 +95,8 @@ static void on_item(lv_event_t* e) {
     if (strcmp(it->label_en, "Language") == 0) {
         extern bool s_lang_cn;
         s_lang_cn = !s_lang_cn;
+        dialog_bubble_set_lang(s_lang_cn);
+        settings_store_set_string("lang", s_lang_cn ? "cn" : "en");
         lv_obj_delete(s_page); s_page = NULL;
         page_settings_create(lv_screen_active());
         return;

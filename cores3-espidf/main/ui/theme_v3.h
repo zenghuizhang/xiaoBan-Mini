@@ -14,11 +14,11 @@ typedef enum {
 
 #define FACE_SCALE  1.6f
 
-// backwards-compat macros
-#define TECH_FG  lv_color_hex(0x33C5FF)
+// backwards-compat macros (RGB565-snapped)
+#define TECH_FG  lv_color_hex(0x30C4F8)
 #define TECH_BG  lv_color_hex(0x000000)
-#define CHILD_FG lv_color_hex(0xFFAA78)
-#define CHILD_BG lv_color_hex(0xFFF9E6)
+#define CHILD_FG lv_color_hex(0xF8A878)
+#define CHILD_BG lv_color_hex(0xF8F8E0)
 
 typedef struct {
     lv_color_t bg, panel, accent, accent_dim, text, text_dim, border, danger, success;

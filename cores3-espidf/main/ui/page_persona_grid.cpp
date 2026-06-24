@@ -4,10 +4,15 @@
 #include "theme_v3.h"
 #include "expressions.h"
 #include "font_zh_14.h"
+#include "chat_llm.h"
 #include <esp_log.h>
 #include <string.h>
 
 static const char* TAG = "PERSONA";
+
+static const char* _T(const char* cn, const char* en) {
+    extern bool s_lang_cn; return s_lang_cn ? cn : en;
+}
 
 typedef struct { const char* id; const char* name; const char* desc; } persona_t;
 
@@ -21,7 +26,8 @@ static const persona_t PERSONAS[6] = {
 };
 
 static const lv_font_t* _F(void) {
-    return (const lv_font_t*)&font_zh_14;
+    extern bool s_lang_cn;
+    return s_lang_cn ? (const lv_font_t*)&font_zh_14 : &lv_font_montserrat_14;
 }
 
 static void back_cb(lv_event_t* e) {
@@ -37,7 +43,8 @@ static void back_cb(lv_event_t* e) {
 
 static void pick_cb(lv_event_t* e) {
     const char* id = (const char*)lv_event_get_user_data(e);
-    ESP_LOGI(TAG, "Persona selected: %s", id);
+    chat_llm_set_persona(id);
+    ESP_LOGI(TAG, "Persona changed: %s", id);
     // Walk up to root and delete
     lv_obj_t* t = (lv_obj_t*)lv_event_get_target(e);
     while (t) {
@@ -62,7 +69,7 @@ lv_obj_t* page_persona_grid_create(lv_obj_t* parent) {
     lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
 
     xb_statusbar_create(root);
-    lv_obj_t* tb = xb_topbar_create(root, "Persona", true);
+    lv_obj_t* tb = xb_topbar_create(root, _T("角色", "Persona"), true);
     lv_obj_set_style_text_font(lv_obj_get_child(tb, 1), _F(), 0);
     lv_obj_add_flag(tb, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(tb, back_cb, LV_EVENT_CLICKED, NULL);
