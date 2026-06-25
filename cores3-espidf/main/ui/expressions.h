@@ -35,6 +35,9 @@ typedef enum {
     EXPR_SURPRISED,     // v6.0: 惊讶 (大眼+圆嘴)
     EXPR_SLEEP_WAKE,    // v6.0: 睡醒 (渐睁眼)
     EXPR_LOST,          // v6.0: 迷茫 (下垂眼+倒嘴)
+    // v7.6 不对称表情 (竞品对齐: Vector/Emo 微表情)
+    EXPR_CONFUSED,      // 困惑 (一大一小眼+单侧挑眉)
+    EXPR_SUSPICIOUS,    // 怀疑 (半眯眼+斜视)
 } Expression;
 
 // v5.0: baseScale = 1.6
@@ -60,6 +63,17 @@ void expression_start_carousel(void);
 void expression_refresh_theme(void);
 void expression_process_pending(void);
 void expression_set_drawing_enabled(bool enabled);
+
+// 情绪系统 (竞品对齐: Emotion State Machine)
+void expression_notify_touch(void);      // 触摸交互 → energy+15, mood+10
+void expression_notify_chat(void);       // AI 对话 → energy+20, mood+15
+void expression_notify_shake(void);      // 摇晃 → mood-20
+void expression_notify_good_event(void); // 好事件 → mood+25, energy+10
+int  expression_get_energy(void);        // 获取当前精力 (0-100)
+int  expression_get_mood(void);          // 获取当前心情 (-100~100)
+
+// IMU 眼神方向 (竞品对齐: 眼睛朝倾斜方向看)
+void expression_update_tilt(float pitch_deg, float roll_deg);  // 主循环调用
 
 #ifdef __cplusplus
 }

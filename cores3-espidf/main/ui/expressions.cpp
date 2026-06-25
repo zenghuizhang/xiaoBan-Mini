@@ -6,6 +6,7 @@
  */
 #include "expressions.h"
 #include "theme_v3.h"
+#include "audio_feedback.h"
 #include <esp_log.h>
 #include <esp_random.h>
 #include <freertos/FreeRTOS.h>
@@ -13,12 +14,23 @@
 #include <M5Unified.h>
 #include <math.h>
 
+// IMU 眼神方向: 设备倾斜时瞳孔朝倾斜方向偏移
+static volatile int s_tilt_pupil_x = 0;  // -20 ~ +20
+static volatile int s_tilt_pupil_y = 0;  // -10 ~ +10
+
 static const char *TAG = "FACE";
 
 static Expression current_expr = EXPR_IDLE;
 static TimerHandle_t blink_timer = NULL;
 static TimerHandle_t carousel_timer = NULL;
 static volatile bool blinking = false;
+
+// ========== 情绪状态机 (竞品对齐: Emotion State Machine) ==========
+// energy: 0-100, 长时间无交互自然衰减, 用户交互时回升
+// mood:   -100~100, 受事件影响 (触摸+, 摇晃-, 对话+)
+static int s_energy = 70;   // 初始精力
+static int s_mood = 0;      // 初始心情
+static uint32_t s_last_interaction_ms = 0;  // 上次交互时间
 
 static lv_obj_t *face_container = NULL;
 static lv_obj_t *tear_left = NULL, *tear_right = NULL;
@@ -76,6 +88,30 @@ static void _draw_glow(lv_layer_t *layer, int cx, int cy, int w, int h, int r, l
 // 0°=右, 90°=下, 180°=左, 270°=上
 // 微笑: center 在嘴巴上方, 弧线通过底部 (角度 ~30°-150°)
 // 沮丧: center 在嘴巴下方, 弧线通过顶部 (角度 ~210°-330°)
+
+// v7.6: 眉毛 (竞品对齐: 弧线眉毛角度随表情变化)
+// angle > 0: 眉头向下眉尾上扬 (惊讶/好奇)
+// angle < 0: 眉头上扬眉尾下压 (生气/困惑)
+// angle = 0: 水平 (平静)
+static void _draw_eyebrow(lv_layer_t *layer, int cx, int cy, int width,
+                           int angle_deg, lv_color_t color, lv_opa_t opa)
+{
+    if (angle_deg == 0) return;  // 水平时不画 (太细看不清)
+    lv_draw_arc_dsc_t dsc;
+    lv_draw_arc_dsc_init(&dsc);
+    dsc.color = color;
+    dsc.opa = opa;
+    dsc.width = 2;
+    dsc.rounded = 1;
+    // 眉毛弧度: 角度越大弧越弯
+    int arc_span = 40 + abs(angle_deg);
+    dsc.start_angle = 270 - arc_span / 2;
+    dsc.end_angle = 270 + arc_span / 2;
+    dsc.center.x = cx;
+    dsc.center.y = cy + abs(angle_deg) / 3;  // 弯曲时中心下移
+    dsc.radius = width / 2 + abs(angle_deg) / 4;
+    lv_draw_arc(layer, &dsc);
+}
 static void _draw_mouth_arc(lv_layer_t *layer, int cx, int cy, int radius,
                              int start_angle, int end_angle, int width,
                              lv_color_t color, lv_opa_t opa)
@@ -153,8 +189,8 @@ static void _face_draw_cb(lv_event_t *e)
 
     float breath_scale = 1.0f, breath_opa = 1.0f;
 
-    // v5.0 瞳孔微动: 从动画中读取 x/y 偏移
-    int pupil_x = anim_pupil_x;
+    // v5.0 瞳孔微动: 从动画中读取 x/y 偏移 + IMU 倾斜方向
+    int pupil_x = anim_pupil_x + s_tilt_pupil_x;
 
     // 呼吸值 → scale/opacity (5级呼吸: deep_sleep 5% / light_rest 8% / idle 10% / alert 15% / excited 18%)
     float breath_factor = anim_breath_val / 255.0f;
@@ -274,6 +310,19 @@ static void _face_draw_cb(lv_event_t *e)
         base_lw = base_rw = 32; base_lh = base_rh = 20;
         ly_off = 16; ry_off = 16;
         break;
+    // v7.6 不对称表情
+    case EXPR_CONFUSED:
+        // 左眼大右眼小, 微微斜视
+        base_lw = 34; base_lh = 38; ly_off = -8;   // 左眼大
+        base_rw = 26; base_rh = 28; ry_off = -4;   // 右眼小
+        pupil_x = 8;  // 微微右看
+        break;
+    case EXPR_SUSPICIOUS:
+        // 双眼半眯, 微微左看 (怀疑地看)
+        base_lw = base_rw = 36; base_lh = base_rh = 18;
+        ly_off = ry_off = 4;
+        pupil_x = -12;  // 左看
+        break;
     }
 
     // 呼吸调制: 眼睛 scale
@@ -306,6 +355,17 @@ static void _face_draw_cb(lv_event_t *e)
         _draw_glow(layer, rx, ey + ry_off, rw, rh, rr, fg);
     }
 
+    // --- 瞳孔缩放因子 (竞品对齐: 好奇放大, 警觉缩小) ---
+    float pupil_scale = 1.0f;
+    switch (expr) {
+    case EXPR_CURIOUS: case EXPR_SURPRISED: pupil_scale = 1.3f; break;  // 瞳孔放大
+    case EXPR_EXCITED: case EXPR_HAPPY:     pupil_scale = 1.15f; break;
+    case EXPR_ANGRY: case EXPR_ALERT:       pupil_scale = 0.7f; break;   // 瞳孔缩小
+    case EXPR_SAD: case EXPR_LOST:          pupil_scale = 0.85f; break;
+    case EXPR_DEEP_SLEEP: case EXPR_LIGHT_REST: pupil_scale = 0.6f; break;
+    default: break;
+    }
+
     // --- 左眼 ---
     if (expr == EXPR_DIZZY) {
         // v3.10: 眩晕原地转圈 — 小圆点瞳孔 + 螺旋弧线 (螺旋在 draw 末尾绘制)
@@ -336,6 +396,20 @@ static void _face_draw_cb(lv_event_t *e)
             lv_draw_rect(layer, &mdsc, &ma);
         } else {
             lv_draw_rect(layer, &eye_dsc, &la);
+            // 瞳孔: 眼睛内部的深色圆点, 大小随表情变化
+            if (lh > (int)(8*s) && expr != EXPR_MENU) {
+                int pr = (int)(lw * 0.25f * pupil_scale);
+                if (pr > lw/3) pr = lw/3;
+                if (pr < 3) pr = 3;
+                lv_draw_rect_dsc_t pdsc;
+                lv_draw_rect_dsc_init(&pdsc);
+                pdsc.bg_color = bg; pdsc.bg_opa = (int)(breath_opa * 200);
+                pdsc.radius = pr; pdsc.border_width = 0;
+                lv_area_t pa;
+                pa.x1 = lx - pr; pa.y1 = ey + ly_off - pr;
+                pa.x2 = lx + pr; pa.y2 = ey + ly_off + pr;
+                lv_draw_rect(layer, &pdsc, &pa);
+            }
         }
     }
 
@@ -368,6 +442,45 @@ static void _face_draw_cb(lv_event_t *e)
             lv_draw_rect(layer, &mdsc, &ma);
         } else {
             lv_draw_rect(layer, &eye_dsc, &ra);
+            // 瞳孔: 右眼
+            if (rh > (int)(8*s) && expr != EXPR_MENU) {
+                int pr = (int)(rw * 0.25f * pupil_scale);
+                if (pr > rw/3) pr = rw/3;
+                if (pr < 3) pr = 3;
+                lv_draw_rect_dsc_t pdsc;
+                lv_draw_rect_dsc_init(&pdsc);
+                pdsc.bg_color = bg; pdsc.bg_opa = (int)(breath_opa * 200);
+                pdsc.radius = pr; pdsc.border_width = 0;
+                lv_area_t pa;
+                pa.x1 = rx - pr; pa.y1 = ey + ry_off - pr;
+                pa.x2 = rx + pr; pa.y2 = ey + ry_off + pr;
+                lv_draw_rect(layer, &pdsc, &pa);
+            }
+        }
+    }
+
+    // --- 眉毛 (竞品对齐: 角度随表情变化) ---
+    {
+        int brow_angle_l = 0, brow_angle_r = 0;
+        switch (expr) {
+        case EXPR_SURPRISED: brow_angle_l = brow_angle_r = 25; break;   // 双眉上扬
+        case EXPR_ANGRY:     brow_angle_l = brow_angle_r = -20; break;  // 双眉下压
+        case EXPR_CURIOUS:   brow_angle_l = 10; brow_angle_r = 18; break; // 右眉更高
+        case EXPR_SAD:       brow_angle_l = brow_angle_r = -12; break;  // 微微下压
+        case EXPR_THINKING:  brow_angle_l = 5; brow_angle_r = -8; break; // 一高一低
+        case EXPR_NAUGHTY:   brow_angle_l = -5; brow_angle_r = 12; break; // 调皮挑眉
+        case EXPR_CONFUSED:  brow_angle_l = -10; brow_angle_r = 15; break; // 反向
+        case EXPR_SUSPICIOUS: brow_angle_l = brow_angle_r = -5; break;   // 微微下压
+        case EXPR_EXCITED:   brow_angle_l = brow_angle_r = 15; break;
+        case EXPR_LOST:      brow_angle_l = brow_angle_r = -8; break;
+        default: break;
+        }
+        if (brow_angle_l != 0 || brow_angle_r != 0) {
+            int brow_y = ey - (int)(30 * s);  // 眉毛在眼睛上方
+            int brow_w = (int)(20 * s);       // 眉毛宽度
+            lv_opa_t brow_opa = (int)(breath_opa * 180);
+            _draw_eyebrow(layer, lx, brow_y + ly_off, brow_w, brow_angle_l, fg, brow_opa);
+            _draw_eyebrow(layer, rx, brow_y + ry_off, brow_w, brow_angle_r, fg, brow_opa);
         }
     }
 
@@ -486,6 +599,18 @@ static void _face_draw_cb(lv_event_t *e)
         _draw_mouth_arc(layer, 160, my - (int)(20*s) - r, r, 70, 110, (int)(2*s), mc, m_opa);
         break;
     }
+    case EXPR_CONFUSED: {
+        // 歪嘴微笑 (不对称)
+        int r = (int)(16 * s);
+        _draw_mouth_arc(layer, 160 + (int)(4*s), my - r + (int)(3*s), r, 50, 120, (int)(3*s), mc, m_opa);
+        break;
+    }
+    case EXPR_SUSPICIOUS: {
+        // 紧抿嘴 (直线微弯)
+        int r = (int)(50 * s);
+        _draw_mouth_arc(layer, 160, my + (int)(8*s) - r, r, 82, 98, (int)(2*s), mc, m_opa);
+        break;
+    }
     }
 
     // v3.10: 眩晕螺旋眼 (原地绘制, 替代矩形眼睛)
@@ -581,10 +706,26 @@ static void _face_anim_cb(void *obj, int32_t v)
     lv_obj_invalidate(face_container);
 }
 
+// 竞品对齐: 主动探索 — 高能量时偶尔大范围扫视
+static int s_scan_amplitude = 5;  // 当前扫视幅度 (5=微移, 15=扫视)
+
 static void _pupil_anim_cb(void *obj, int32_t v)
 {
     float rad = v * M_PI / 180.0f;
-    anim_pupil_x = (int32_t)(sinf(rad * 3.7f) * 5.0f);
+
+    // 高能量 + idle 时, 偶尔切换到大范围扫视
+    if (current_expr == EXPR_IDLE && s_energy > 50) {
+        // 每个动画周期(8s)有 20% 概率进入扫视模式
+        if (v > 340 && v < 350 && (esp_random() % 100) < 20) {
+            s_scan_amplitude = 12 + (esp_random() % 8);  // 12-20px
+        }
+        // 扫视周期结束后恢复
+        if (v < 20) s_scan_amplitude = 5;
+    } else {
+        s_scan_amplitude = 5;
+    }
+
+    anim_pupil_x = (int32_t)(sinf(rad * 3.7f) * (float)s_scan_amplitude);
     anim_pupil_y = (int32_t)(cosf(rad * 2.3f) * 3.0f);
     if (++_anim_tick % 6 == 0) lv_obj_invalidate(face_container);
 }
@@ -742,24 +883,98 @@ static void _render_expression(Expression expr)
 }
 
 // ========== 定时器 ==========
+// 竞品对齐: 不规则眨眼 (偶尔连续眨两次, 偶尔长时间不眨)
+static int s_blink_count = 0;  // 当前连续眨眼次数
+
 static void _blink_callback(TimerHandle_t timer)
 {
     if (blinking) {
+        // 眼睛正在闭合 → 打开
         pending_blink_state = false; pending_blink = true; blinking = false;
-        uint32_t next = 3000 + (esp_random() % 2000);
-        xTimerChangePeriod(blink_timer, pdMS_TO_TICKS(next), 0);
+        s_blink_count++;
+
+        // 连续眨两次: 15% 概率
+        if (s_blink_count < 2 && (esp_random() % 100) < 15) {
+            // 短暂间隔后再次眨眼
+            xTimerChangePeriod(blink_timer, pdMS_TO_TICKS(80), 0);
+        } else {
+            s_blink_count = 0;
+            // 正常间隔: 2-7s (偶尔长时间不眨)
+            uint32_t r = esp_random() % 100;
+            uint32_t next;
+            if (r < 10)      next = 6000 + (esp_random() % 2000);  // 10% 长不眨 6-8s
+            else if (r < 25) next = 4500 + (esp_random() % 1500);  // 15% 较长 4.5-6s
+            else              next = 2000 + (esp_random() % 2000);  // 75% 正常 2-4s
+            xTimerChangePeriod(blink_timer, pdMS_TO_TICKS(next), 0);
+        }
     } else {
+        // 眼睛睁开 → 闭合
         pending_blink_state = true; pending_blink = true; blinking = true;
-        xTimerChangePeriod(blink_timer, pdMS_TO_TICKS(150), 0);
+        xTimerChangePeriod(blink_timer, pdMS_TO_TICKS(120), 0);  // 闭合时长 120ms
     }
     xTimerStart(blink_timer, 0);
 }
 
+// 情绪驱动的表情选择 (替代纯随机)
+static Expression _emotion_pick_expression(void)
+{
+    // 根据 energy 和 mood 选择表情池
+    // energy: 精力高→活跃表情, 精力低→疲倦表情
+    // mood:   心情好→积极表情, 心情差→消极表情
+    static const Expression pool_high_energy[] = {
+        EXPR_HAPPY, EXPR_EXCITED, EXPR_CELEBRATE, EXPR_CURIOUS,
+        EXPR_WINK, EXPR_NAUGHTY, EXPR_SURPRISED, EXPR_LOOK_LEFT, EXPR_LOOK_RIGHT
+    };
+    static const Expression pool_mid_energy[] = {
+        EXPR_IDLE, EXPR_THINKING, EXPR_WINK, EXPR_LOOK_LEFT,
+        EXPR_LOOK_RIGHT, EXPR_CURIOUS, EXPR_CONFUSED, EXPR_SUSPICIOUS, EXPR_IDLE, EXPR_IDLE
+    };
+    static const Expression pool_low_energy[] = {
+        EXPR_YAWN, EXPR_SAD, EXPR_DEEP_SLEEP, EXPR_LIGHT_REST,
+        EXPR_LOST, EXPR_IDLE, EXPR_IDLE, EXPR_IDLE  // 大量 idle
+    };
+    static const Expression pool_good_mood[] = {
+        EXPR_HAPPY, EXPR_CELEBRATE, EXPR_EXCITED, EXPR_WINK, EXPR_NAUGHTY
+    };
+    static const Expression pool_bad_mood[] = {
+        EXPR_ANGRY, EXPR_SAD, EXPR_LOST, EXPR_CRYING
+    };
+
+    const Expression *pool;
+    int pool_size;
+
+    // 心情极端时优先用心情池
+    if (s_mood > 50) {
+        pool = pool_good_mood; pool_size = sizeof(pool_good_mood)/sizeof(pool_good_mood[0]);
+    } else if (s_mood < -30) {
+        pool = pool_bad_mood; pool_size = sizeof(pool_bad_mood)/sizeof(pool_bad_mood[0]);
+    } else if (s_energy > 70) {
+        pool = pool_high_energy; pool_size = sizeof(pool_high_energy)/sizeof(pool_high_energy[0]);
+    } else if (s_energy > 35) {
+        pool = pool_mid_energy; pool_size = sizeof(pool_mid_energy)/sizeof(pool_mid_energy[0]);
+    } else {
+        pool = pool_low_energy; pool_size = sizeof(pool_low_energy)/sizeof(pool_low_energy[0]);
+    }
+
+    return pool[esp_random() % pool_size];
+}
+
 static void _carousel_callback(TimerHandle_t timer)
 {
-    next_random_expr = esp_random() % 16;  // 0-5 随机
+    // 情绪衰减: 每次轮播 energy -2
+    if (s_energy > 10) s_energy -= 2;
+    // 心情自然回零
+    if (s_mood > 0) s_mood--;
+    else if (s_mood < 0) s_mood++;
+
+    // 根据情绪选表情
+    next_random_expr = (uint32_t)_emotion_pick_expression();
     pending_carousel = true;
-    uint32_t next = 4000 + (esp_random() % 3000);  // PRD: 4-7s
+
+    // 低能量时轮播更慢 (5-9s), 高能量时更快 (3-6s)
+    int base = (s_energy > 60) ? 3000 : (s_energy > 30) ? 4000 : 5000;
+    int range = (s_energy > 60) ? 3000 : (s_energy > 30) ? 3000 : 4000;
+    uint32_t next = base + (esp_random() % range);
     xTimerChangePeriod(carousel_timer, pdMS_TO_TICKS(next), 0);
 }
 
@@ -790,6 +1005,21 @@ void expression_set(Expression expr, bool animate)
     if (expr == current_expr) return;
     _stop_tears();
     _render_expression(expr);
+
+    // 声音反馈 (竞品对齐: 表情切换时的音效)
+    switch (expr) {
+    case EXPR_HAPPY: case EXPR_CELEBRATE: case EXPR_EXCITED:
+        audio_play(AUDIO_EXPR_HAPPY); break;
+    case EXPR_SURPRISED: case EXPR_CURIOUS:
+        audio_play(AUDIO_EXPR_SURPRISED); break;
+    case EXPR_SAD: case EXPR_CRYING: case EXPR_LOST:
+        audio_play(AUDIO_EXPR_SAD); break;
+    case EXPR_DEEP_SLEEP: case EXPR_LIGHT_REST: case EXPR_YAWN:
+        audio_play(AUDIO_EXPR_SLEEP); break;
+    case EXPR_DIZZY:
+        audio_play(AUDIO_EXPR_DIZZY); break;
+    default: break;
+    }
 }
 
 Expression expression_get_current(void) { return current_expr; }
@@ -811,12 +1041,7 @@ void expression_process_pending(void)
     }
     if (pending_carousel) {
         pending_carousel = false;
-        // v6.2: 16 表情轮播 (对齐 Face.tsx)
-        Expression next[] = {EXPR_IDLE, EXPR_HAPPY, EXPR_WINK, EXPR_TALKING, EXPR_DIZZY, EXPR_NAUGHTY,
-                             EXPR_LOOK_LEFT, EXPR_LOOK_RIGHT, EXPR_CURIOUS, EXPR_YAWN,
-                             EXPR_THINKING, EXPR_SURPRISED, EXPR_CELEBRATE, EXPR_EXCITED,
-                             EXPR_SAD, EXPR_ANGRY, EXPR_LOST};
-        expression_set(next[next_random_expr % 16], true);
+        expression_set((Expression)next_random_expr, true);
     }
 }
 
@@ -825,4 +1050,57 @@ void expression_set_drawing_enabled(bool enabled)
     if (face_drawing_enabled == enabled) return;
     face_drawing_enabled = enabled;
     lv_obj_invalidate(face_container);
+}
+
+// ========== 情绪系统公开 API ==========
+void expression_notify_touch(void)
+{
+    s_energy = (s_energy + 15 > 100) ? 100 : s_energy + 15;
+    s_mood = (s_mood + 10 > 100) ? 100 : s_mood + 10;
+    s_last_interaction_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+}
+
+void expression_notify_chat(void)
+{
+    s_energy = (s_energy + 20 > 100) ? 100 : s_energy + 20;
+    s_mood = (s_mood + 15 > 100) ? 100 : s_mood + 15;
+    s_last_interaction_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+}
+
+void expression_notify_shake(void)
+{
+    s_mood = (s_mood - 20 < -100) ? -100 : s_mood - 20;
+    s_last_interaction_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+}
+
+void expression_notify_good_event(void)
+{
+    s_mood = (s_mood + 25 > 100) ? 100 : s_mood + 25;
+    s_energy = (s_energy + 10 > 100) ? 100 : s_energy + 10;
+}
+
+int expression_get_energy(void) { return s_energy; }
+int expression_get_mood(void) { return s_mood; }
+
+// IMU 眼神方向: 从主循环调用, 传入 pitch/roll 角度
+void expression_update_tilt(float pitch_deg, float roll_deg)
+{
+    // pitch (前倾/后仰) → 瞳孔 Y 偏移 (前倾看下方, 后仰看上方)
+    // roll  (左倾/右倾) → 瞳孔 X 偏移 (左倾看左, 右倾看右)
+    // 限制范围, 小角度不响应 (死区 ±5°)
+    int px = 0, py = 0;
+    if (fabsf(roll_deg) > 5.0f) {
+        px = (int)(roll_deg * 0.8f);  // 1° → 0.8px
+        if (px > 18) px = 18;
+        if (px < -18) px = -18;
+    }
+    if (fabsf(pitch_deg) > 5.0f) {
+        py = (int)(pitch_deg * 0.5f);
+        if (py > 10) py = 10;
+        if (py < -10) py = -10;
+    }
+    s_tilt_pupil_x = px;
+    s_tilt_pupil_y = py;
+    // 持续移动时每帧 invalidate
+    if (px != 0 || py != 0) lv_obj_invalidate(face_container);
 }

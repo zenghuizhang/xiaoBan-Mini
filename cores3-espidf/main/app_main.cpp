@@ -151,6 +151,7 @@ static void _screen_face_click_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CLICKED) {
+        expression_notify_touch();  // 情绪系统: 触摸 → energy+, mood+
         uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
         // v6.0: 双击 → 切换 MenuOverlay (对齐 RobotUI handleDoubleClick)
@@ -439,6 +440,15 @@ extern "C" void app_main(void)
     while (1) {
         M5.update();
 
+        // IMU 眼神方向: 每帧读取倾斜 → 更新瞳孔偏移
+        {
+            float ax, ay, az;
+            M5.Imu.getAccel(&ax, &ay, &az);
+            float pitch = atan2f(-ax, sqrtf(ay*ay + az*az)) * 180.0f / M_PI;
+            float roll  = atan2f(ay, az) * 180.0f / M_PI;
+            expression_update_tilt(pitch, roll);
+        }
+
         // 心跳日志 (每 2 秒一次)
         if (++_loop_cnt % 400 == 0) {
             ESP_LOGI(TAG, "heartbeat #%d, free heap: %d", _loop_cnt/400,
@@ -469,12 +479,12 @@ extern "C" void app_main(void)
         MotionAction ma = motion_poll();
         if (ma != MOTION_NONE) {
             switch (ma) {
-            case MOTION_TILT_FORWARD: expression_set(EXPR_CURIOUS, true); break;
+            case MOTION_TILT_FORWARD: expression_set(EXPR_CURIOUS, true); expression_notify_touch(); break;
             case MOTION_TILT_BACKWARD: expression_set(EXPR_YAWN, true); break;
-            case MOTION_TILT_LEFT:  expression_set(EXPR_LOOK_LEFT, true); break;
-            case MOTION_TILT_RIGHT: expression_set(EXPR_LOOK_RIGHT, true); break;
-            case MOTION_SHAKE: expression_set(EXPR_DIZZY, true); break;
-            case MOTION_TAP: expression_set(EXPR_WINK, true); break;
+            case MOTION_TILT_LEFT:  expression_set(EXPR_LOOK_LEFT, true); expression_notify_touch(); break;
+            case MOTION_TILT_RIGHT: expression_set(EXPR_LOOK_RIGHT, true); expression_notify_touch(); break;
+            case MOTION_SHAKE: expression_set(EXPR_DIZZY, true); expression_notify_shake(); break;
+            case MOTION_TAP: expression_set(EXPR_WINK, true); expression_notify_touch(); break;
             default: break;
             }
         }

@@ -100,6 +100,7 @@ static void _poll_response_cb(lv_timer_t* t)
     if (chat_llm_poll_response(buf, sizeof(buf))) {
         page_chat_set_thinking(false);
         page_chat_add_message(buf, false);
+        expression_notify_chat();  // 情绪系统: 对话 → energy+, mood+
         ESP_LOGI(TAG, "LLM response displayed");
     }
 }
