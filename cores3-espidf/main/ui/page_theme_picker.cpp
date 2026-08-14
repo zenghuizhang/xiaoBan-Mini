@@ -14,13 +14,14 @@ static const char* _T(const char* cn, const char* en) {
     extern bool s_lang_cn; return s_lang_cn ? cn : en;
 }
 
-typedef struct { ThemeV3 id; const char* name; lv_color_t swatch; } theme_choice_t;
+// v7.6 主题选择器: 中文名 + 色卡 (对齐 PRD §4.1)
+typedef struct { ThemeV3 id; const char* name_cn; const char* name_en; lv_color_t swatch; } theme_choice_t;
 
 static const theme_choice_t THEMES[4] = {
-    { THEME_TECH,      "Tech",     lv_color_hex(0x33C5FF) },
-    { THEME_LAVENDER,  "Lavender", lv_color_hex(0xA855F7) },
-    { THEME_CHILD,      "Child",    lv_color_hex(0xFFAA78) },
-    { THEME_COCOA,     "Cocoa",    lv_color_hex(0xFDA4AF) },
+    { THEME_TECH,      "科技青",     "Tech",     lv_color_hex(0x33C5FF) },
+    { THEME_LAVENDER,  "柔紫",       "Lavender", lv_color_hex(0xA855F7) },
+    { THEME_CHILD,     "温暖儿童",   "Child",    lv_color_hex(0xFFAA78) },
+    { THEME_COCOA,     "草莓可可",   "Cocoa",    lv_color_hex(0xFDA4AF) },
 };
 
 static const lv_font_t* _F(void) {
@@ -95,11 +96,20 @@ lv_obj_t* page_theme_picker_create(lv_obj_t* parent) {
         lv_obj_set_style_border_width(sw, 0, 0);
         lv_obj_align(sw, LV_ALIGN_TOP_LEFT, 8, 8);
 
+        // Chinese name (primary)
         lv_obj_t* l = lv_label_create(tile);
-        lv_label_set_text(l, t->name);
+        lv_label_set_text(l, _T(t->name_cn, t->name_en));
         lv_obj_set_style_text_color(l, fg, 0);
         lv_obj_set_style_text_font(l, _F(), 0);
-        lv_obj_center(l);
+        lv_obj_align(l, LV_ALIGN_CENTER, 0, 0);
+
+        // English name (secondary, dimmed)
+        lv_obj_t* en = lv_label_create(tile);
+        lv_label_set_text(en, t->name_en);
+        lv_obj_set_style_text_color(en, th->text_dim, 0);
+        lv_obj_set_style_text_font(en, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_opa(en, LV_OPA_60, 0);
+        lv_obj_align(en, LV_ALIGN_BOTTOM_MID, 0, -6);
     }
 
     expression_set_drawing_enabled(false);

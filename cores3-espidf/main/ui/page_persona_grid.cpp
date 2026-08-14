@@ -14,15 +14,16 @@ static const char* _T(const char* cn, const char* en) {
     extern bool s_lang_cn; return s_lang_cn ? cn : en;
 }
 
-typedef struct { const char* id; const char* name; const char* desc; } persona_t;
+// v7.6 人格: 中文 tagline + emoji (对齐 PRD v3.0 §4.2)
+typedef struct { const char* id; const char* name; const char* tagline_cn; const char* tagline_en; const char* emoji; } persona_t;
 
 static const persona_t PERSONAS[6] = {
-    { "lyra",   "Lyra",  "Cheerful companion"  },
-    { "echo",   "Echo",  "Calm listener"       },
-    { "nova",   "Nova",  "Curious explorer"    },
-    { "sage",   "Sage",  "Wise advisor"        },
-    { "pico",   "Pico",  "Playful buddy"       },
-    { "doc",    "Doc",   "Helpful mentor"      },
+    { "lyra", "Lyra", "温柔诗人",   "Gentle poet",     "🎵" },
+    { "echo", "Echo", "话痨复读机", "Echo repeater",   "🪞" },
+    { "nova", "Nova", "极客科普",   "Geek explainer",  "🌟" },
+    { "sage", "Sage", "冷静顾问",   "Calm advisor",    "🦉" },
+    { "pico", "Pico", "童趣小鸡",   "Playful chick",   "🐣" },
+    { "doc",  "Doc",  "严谨医师",   "Strict doctor",   "🩺" },
 };
 
 static const lv_font_t* _F(void) {
@@ -87,15 +88,24 @@ lv_obj_t* page_persona_grid_create(lv_obj_t* parent) {
         lv_obj_set_style_border_width(tile, 2, 0);
         lv_obj_add_event_cb(tile, pick_cb, LV_EVENT_CLICKED, (void*)p->id);
 
+        // Emoji (top)
+        lv_obj_t* em = lv_label_create(tile);
+        lv_label_set_text(em, p->emoji);
+        lv_obj_set_style_text_font(em, &lv_font_montserrat_14, 0);
+        lv_obj_align(em, LV_ALIGN_TOP_MID, 0, 4);
+
+        // Name
         lv_obj_t* nm = lv_label_create(tile);
         lv_label_set_text(nm, p->name);
         lv_obj_set_style_text_color(nm, th->accent_hi, 0);
         lv_obj_set_style_text_font(nm, _F(), 0);
-        lv_obj_align(nm, LV_ALIGN_TOP_MID, 0, 6);
+        lv_obj_align(nm, LV_ALIGN_TOP_MID, 0, 22);
 
+        // Tagline (bottom)
         lv_obj_t* ds = lv_label_create(tile);
-        lv_label_set_text(ds, p->desc);
+        lv_label_set_text(ds, _T(p->tagline_cn, p->tagline_en));
         lv_obj_set_style_text_color(ds, th->text_dim, 0);
+        lv_obj_set_style_text_font(ds, _F(), 0);
         lv_label_set_long_mode(ds, LV_LABEL_LONG_WRAP);
         lv_obj_set_width(ds, 84);
         lv_obj_align(ds, LV_ALIGN_BOTTOM_MID, 0, -4);

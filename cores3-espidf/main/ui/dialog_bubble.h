@@ -1,4 +1,4 @@
-/* v5.0 DialogBubble: 对话气泡 (对齐 RobotUI.tsx DialogBubble) */
+/* v7.6 DialogBubble: 对话气泡 (对齐 PRD §4.5 场景态) */
 #pragma once
 #include <lvgl.h>
 #include "theme_v3.h"
@@ -8,10 +8,14 @@ extern "C" {
 #endif
 
 typedef enum {
-    DIALOG_MORNING,   // 早安问候
-    DIALOG_SUGGEST,   // 表情建议
-    DIALOG_SLEEP,     // 晚安提示
-    DIALOG_CUSTOM,    // 自定义文本
+    DIALOG_MORNING,     // 早安问候
+    DIALOG_SUGGEST,     // 表情建议
+    DIALOG_SLEEP,       // 晚安提示
+    DIALOG_LONELY,      // 无聊 (v7.6 新增)
+    DIALOG_OTA,         // OTA 更新 (v7.6 新增)
+    DIALOG_ERROR,       // 系统错误 (v7.6 新增)
+    DIALOG_VOICE_WAKE,  // 语音唤醒 (v7.6 新增)
+    DIALOG_CUSTOM,      // 自定义文本
 } DialogType;
 
 /** 显示对话气泡, duration_ms 后自动关闭 (0=手动关闭) */

@@ -1,4 +1,4 @@
-/* v5.0 DialogBubble */
+/* v7.6 DialogBubble — 使用 theme tokens, 支持 8 种场景 */
 #include "dialog_bubble.h"
 #include "font_zh_14.h"
 #include <esp_log.h>
@@ -15,24 +15,33 @@ static void _auto_close(lv_timer_t *t)
     dialog_bubble_close();
 }
 
+// v7.6: 使用 theme tokens 取色, 不再硬编码 per-theme
+static void _bubble_style(lv_color_t *bg, lv_color_t *fg, lv_color_t *border)
+{
+    const theme_colors_t *th = theme_get_colors();
+    *bg     = th->panel;
+    *fg     = th->text;
+    *border = th->border;
+}
+
 lv_obj_t *dialog_bubble_show(lv_obj_t *parent, DialogType type, uint32_t duration_ms)
 {
     if (bubble) dialog_bubble_close();
 
-    bool is_tech = (theme_v3_get_current() == THEME_TECH);
-    bool is_dev  = (theme_v3_get_current() == THEME_COCOA);
-
     const char *text = "";
     switch (type) {
-    case DIALOG_MORNING: text = s_lang_cn ? "早上好呀！" : "Good morning!"; break;
-    case DIALOG_SUGGEST: text = s_lang_cn ? "要不要试试调皮表情？" : "Try a naughty face?"; break;
-    case DIALOG_SLEEP:   text = s_lang_cn ? "该休息了哦~" : "Time to rest~"; break;
-    case DIALOG_CUSTOM:  text = ""; break;  // 用 dialog_bubble_show_text 代替
+    case DIALOG_MORNING:    text = s_lang_cn ? "早上好呀！今天也是充满能量的一天。" : "Good morning! Full of energy today."; break;
+    case DIALOG_SUGGEST:    text = s_lang_cn ? "要不要试试调皮表情？" : "Try a naughty face?"; break;
+    case DIALOG_SLEEP:      text = s_lang_cn ? "该休息了哦~" : "Time to rest~"; break;
+    case DIALOG_LONELY:     text = s_lang_cn ? "好无聊哦，陪我玩一会吧..." : "I'm bored... play with me?"; break;
+    case DIALOG_OTA:        text = s_lang_cn ? "OTA 系统更新中..." : "OTA updating..."; break;
+    case DIALOG_ERROR:      text = s_lang_cn ? "系统发生异常错误！" : "System error!"; break;
+    case DIALOG_VOICE_WAKE: text = s_lang_cn ? "我在听..." : "I'm listening..."; break;
+    case DIALOG_CUSTOM:     text = ""; break;
     }
 
-    lv_color_t bg = is_tech ? lv_color_hex(0x083344) : is_dev ? lv_color_hex(0x14532D) : lv_color_hex(0xFFF5E0);
-    lv_color_t fg = is_tech ? lv_color_hex(0x67E8F9) : is_dev ? lv_color_hex(0x4ADE80) : lv_color_hex(0xFF7F50);
-    lv_color_t border = is_tech ? lv_color_hex(0x0891B2) : is_dev ? lv_color_hex(0x16A34A) : lv_color_hex(0xFFD5B0);
+    lv_color_t bg, fg, border;
+    _bubble_style(&bg, &fg, &border);
 
     bubble = lv_obj_create(parent);
     lv_obj_set_size(bubble, 280, 40);
@@ -47,7 +56,6 @@ lv_obj_t *dialog_bubble_show(lv_obj_t *parent, DialogType type, uint32_t duratio
     lv_obj_t *label = lv_label_create(bubble);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(label, fg, 0);
-    // v6.0: 中文 font_zh_14, 英文 Montserrat
     lv_obj_set_style_text_font(label, s_lang_cn ? (const lv_font_t*)&font_zh_14 : &lv_font_montserrat_14, 0);
     lv_obj_center(label);
 
@@ -59,18 +67,12 @@ lv_obj_t *dialog_bubble_show(lv_obj_t *parent, DialogType type, uint32_t duratio
 
 lv_obj_t *dialog_bubble_show_text(lv_obj_t *parent, const char *cn, const char *en, uint32_t duration_ms)
 {
-    // Store the custom text selection and use DIALOG_CUSTOM type
-    // We use a different approach: directly call the internal show logic with custom text
     if (bubble) dialog_bubble_close();
-
-    bool is_tech = (theme_v3_get_current() == THEME_TECH);
-    bool is_dev  = (theme_v3_get_current() == THEME_COCOA);
 
     const char *text = s_lang_cn ? cn : en;
 
-    lv_color_t bg = is_tech ? lv_color_hex(0x083344) : is_dev ? lv_color_hex(0x14532D) : lv_color_hex(0xFFF5E0);
-    lv_color_t fg = is_tech ? lv_color_hex(0x67E8F9) : is_dev ? lv_color_hex(0x4ADE80) : lv_color_hex(0xFF7F50);
-    lv_color_t border = is_tech ? lv_color_hex(0x0891B2) : is_dev ? lv_color_hex(0x16A34A) : lv_color_hex(0xFFD5B0);
+    lv_color_t bg, fg, border;
+    _bubble_style(&bg, &fg, &border);
 
     bubble = lv_obj_create(parent);
     lv_obj_set_size(bubble, 280, 40);
