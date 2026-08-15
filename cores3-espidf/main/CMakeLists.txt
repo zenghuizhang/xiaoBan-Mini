@@ -40,9 +40,21 @@ idf_component_register(
         "ui/page_persona_grid.cpp"
         "ui/page_memory_browser.cpp"
         "ui/chat_llm.cpp"
+        "ui/page_text_input.cpp"
+        "productivity/productivity_ctx.cpp"
+        "productivity/todo_store.c"
+        "productivity/pomodoro.cpp"
+        "productivity/content_safety.cpp"
+        "productivity/play_time.cpp"
+        "productivity/star_reward.c"
+        "productivity/game_engine.cpp"
+        "productivity/parenting_knowledge.cpp"
+        "ui/page_todo.cpp"
+        "ui/page_pomodoro.cpp"
     INCLUDE_DIRS
         "."
         "ui"
+        "productivity"
     REQUIRES
         "lvgl"
         "m5unified"
@@ -64,4 +76,5 @@ idf_component_register(
         "lv_chinese_font"
         "bsp_cores3"
         "ui_bridge"
+        "voice"
 )

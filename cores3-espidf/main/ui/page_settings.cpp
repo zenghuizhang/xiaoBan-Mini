@@ -11,7 +11,13 @@
 #include "robot_memory.h"
 #include "dialog_bubble.h"
 #include "settings_store.h"
+#include "chat_llm.h"
+#include "page_text_input.h"
+#include "todo_store.h"
+#include "page_todo.h"
+#include "page_pomodoro.h"
 #include <esp_netif.h>
+#include <esp_system.h>
 #include <M5Unified.h>
 #include <esp_log.h>
 
@@ -33,9 +39,17 @@ static item_t G_DISPLAY[] = {
     {"亮度",   "Brightness",  "70%",     2},
     {"音量",   "Volume",      "60%",     2},
 };
+static item_t G_LLM[] = {
+    {"API 密钥",  "API Key",  "",  0},
+    {"接口地址",  "Base URL", "",  0},
+    {"模型",      "Model",    "",  0},
+};
 static item_t G_EXT[] = {
     {"Wi-Fi 网络", "Wi-Fi",       "",        0},
     {"技能插件",   "Skills",      "3 个已安装", 0},
+    {"待办",       "Todo",        "",        0},
+    {"番茄钟",     "Pomodoro",    "",        0},
+    {"孩子年龄",   "Child Age",   "3-4岁",   0},
 };
 static item_t G_SYSTEM[] = {
     {"系统更新",     "Update",        "v6.7",    0},
@@ -46,12 +60,12 @@ static item_t G_DEV[] = {
     {"控制台",   "Console",     "Dev",     0},
     {"详细日志", "Verbose log", "Off",     1},
 };
-static item_t* GROUP_DATA[] = {G_GENERAL, G_DISPLAY, G_EXT, G_SYSTEM, G_DEV};
-static int GROUP_LEN[] = {3, 2, 2, 3, 2};
+static item_t* GROUP_DATA[] = {G_GENERAL, G_DISPLAY, G_LLM, G_EXT, G_SYSTEM, G_DEV};
+static int GROUP_LEN[] = {3, 2, 3, 5, 3, 2};
 
 // 组名双语 — v7.6: 开发者选项带「测试」徽章
-static const char* GRP_CN[] = {"通用", "显示与声音", "拓展功能", "系统", "开发者选项"};
-static const char* GRP_EN[] = {"General", "Display & Audio", "Extensions", "System", "Developer"};
+static const char* GRP_CN[] = {"通用", "显示与声音", "AI 大模型", "拓展功能", "系统", "开发者选项"};
+static const char* GRP_EN[] = {"General", "Display & Audio", "AI Model", "Extensions", "System", "Developer"};
 
 static const char* _T(const char* cn, const char* en) {
     extern bool s_lang_cn;
@@ -77,9 +91,96 @@ static void on_back(lv_event_t* e) {
     extern bool g_breath_paused; g_breath_paused = false;
 }
 
+// ========== LLM settings helpers ==========
+// API key / base_url changes need a reboot (no claw_core stop/deinit); model
+// changes take effect immediately. All three are entered via page_text_input.
+
+static void _on_restart_yes(lv_event_t* e) {
+    (void)e;
+    esp_restart();
+}
+static void _on_restart_later(lv_event_t* e) {
+    lv_obj_t* mbox = (lv_obj_t*)lv_event_get_user_data(e);
+    if (mbox) lv_msgbox_close(mbox);
+}
+static void _confirm_restart(void) {
+    lv_obj_t* mbox = lv_msgbox_create(NULL);  // modal
+    lv_msgbox_add_title(mbox, _T("已保存", "Saved"));
+    lv_msgbox_add_text(mbox, _T("需要重启后生效，现在重启？", "Restart to apply?"));
+    lv_obj_t* yes = lv_msgbox_add_footer_button(mbox, _T("重启", "Restart"));
+    lv_obj_t* no  = lv_msgbox_add_footer_button(mbox, _T("稍后", "Later"));
+    lv_obj_add_event_cb(yes, _on_restart_yes,   LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(no,  _on_restart_later, LV_EVENT_CLICKED, mbox);
+}
+
+static void _on_api_key_done(const char* text, void* ctx) {
+    (void)ctx;
+    chat_llm_set_api_key(text);
+    _confirm_restart();
+}
+static void _on_base_url_done(const char* text, void* ctx) {
+    (void)ctx;
+    chat_llm_set_base_url(text);
+    _confirm_restart();
+}
+static void _on_model_done(const char* text, void* ctx) {
+    (void)ctx;
+    chat_llm_set_model(text);  // immediate, no restart
+}
+
 static void on_item(lv_event_t* e) {
     const item_t* it = (const item_t*)lv_event_get_user_data(e);
     if (!it) return;
+
+    // API Key → password input → save → restart prompt
+    if (strcmp(it->label_en, "API Key") == 0) {
+        if (s_page) { lv_obj_delete(s_page); s_page = NULL; }
+        page_text_input_create(lv_screen_active(),
+            _T("API 密钥", "API Key"),
+            chat_llm_get_api_key(), 127, true,
+            _on_api_key_done, NULL);
+        return;
+    }
+    // Base URL → text input → save → restart prompt
+    if (strcmp(it->label_en, "Base URL") == 0) {
+        if (s_page) { lv_obj_delete(s_page); s_page = NULL; }
+        page_text_input_create(lv_screen_active(),
+            _T("接口地址", "Base URL"),
+            chat_llm_get_base_url(), 127, false,
+            _on_base_url_done, NULL);
+        return;
+    }
+    // Model → text input → save (immediate, no restart)
+    if (strcmp(it->label_en, "Model") == 0) {
+        if (s_page) { lv_obj_delete(s_page); s_page = NULL; }
+        page_text_input_create(lv_screen_active(),
+            _T("模型", "Model"),
+            chat_llm_get_model(), 31, false,
+            _on_model_done, NULL);
+        return;
+    }
+    // Todo list
+    if (strcmp(it->label_en, "Todo") == 0) {
+        if (s_page) { lv_obj_delete(s_page); s_page = NULL; }
+        page_todo_create(lv_screen_active());
+        return;
+    }
+    // Pomodoro timer
+    if (strcmp(it->label_en, "Pomodoro") == 0) {
+        if (s_page) { lv_obj_delete(s_page); s_page = NULL; }
+        page_pomodoro_create(lv_screen_active());
+        return;
+    }
+    // Child age (3-4 / 5-6) — affects thinking-game difficulty in Phase 2
+    if (strcmp(it->label_en, "Child Age") == 0) {
+        char cur[16];
+        settings_store_get_string("child_age", cur, sizeof(cur), "3-4");
+        const char* next = (strcmp(cur, "3-4") == 0) ? "5-6" : "3-4";
+        settings_store_set_string("child_age", next);
+        lv_obj_delete(s_page); s_page = NULL;
+        page_settings_create(lv_screen_active());
+        return;
+    }
 
     // Language
     if (strcmp(it->label_en, "Language") == 0) {
@@ -233,6 +334,32 @@ lv_obj_t* page_settings_create(lv_obj_t* parent) {
     } else {
         G_EXT[0].value = _T("未连接","Offline");
     }
+    // LLM group values (masked key / endpoint / model)
+    static char _key_buf[24];
+    {
+        const char* k = chat_llm_get_api_key();
+        if (!k || !k[0]) snprintf(_key_buf, sizeof(_key_buf), "%s", _T("未设置","Not set"));
+        else {
+            size_t n = strlen(k);
+            if (n <= 4) snprintf(_key_buf, sizeof(_key_buf), "••••");
+            else snprintf(_key_buf, sizeof(_key_buf), "…%.4s", k + n - 4);
+        }
+        G_LLM[0].value = _key_buf;
+    }
+    {
+        const char* u = chat_llm_get_base_url();
+        G_LLM[1].value = (u && u[0]) ? u : _T("默认","Default");
+    }
+    G_LLM[2].value = chat_llm_get_model();
+
+    // Child age (3-4 / 5-6)
+    {
+        static char _age_buf[32];
+        char _age_tmp[16];
+        settings_store_get_string("child_age", _age_tmp, sizeof(_age_tmp), "3-4");
+        snprintf(_age_buf, sizeof(_age_buf), "%s岁", _age_tmp);
+        G_EXT[4].value = _age_buf;
+    }
 
     // Scrollable list
     lv_obj_t* list = lv_obj_create(s_page);
@@ -245,7 +372,7 @@ lv_obj_t* page_settings_create(lv_obj_t* parent) {
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
 
-    for (int g = 0; g < 5; g++) {
+    for (int g = 0; g < 6; g++) {
         lv_obj_t* h = lv_label_create(list);
         lv_label_set_text(h, _T(GRP_CN[g], GRP_EN[g]));
         lv_obj_set_style_text_color(h, fg, 0);
@@ -253,7 +380,7 @@ lv_obj_t* page_settings_create(lv_obj_t* parent) {
         lv_obj_set_style_pad_top(h, 4, 0);
 
         // v7.6: 开发者选项组加「测试」徽章
-        if (g == 4) {
+        if (g == 5) {
             lv_obj_t* badge = lv_label_create(list);
             lv_label_set_text(badge, _T("测试", "BETA"));
             lv_obj_set_style_text_color(badge, bg, 0);
@@ -273,6 +400,6 @@ lv_obj_t* page_settings_create(lv_obj_t* parent) {
     }
 
     expression_set_drawing_enabled(false);
-    ESP_LOGI(TAG, "Settings page created (5 groups)");
+    ESP_LOGI(TAG, "Settings page created (6 groups)");
     return s_page;
 }

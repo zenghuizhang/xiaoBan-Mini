@@ -30,6 +30,17 @@ const char *chat_llm_get_persona(void);
 /* Set persona (persisted to NVS). */
 void chat_llm_set_persona(const char *persona);
 
+/* API key / endpoint (persisted to NVS). Changes require a reboot to take
+ * effect — there is no claw_core stop/deinit, so the running engine keeps the
+ * old values until restart. */
+const char *chat_llm_get_api_key(void);
+void chat_llm_set_api_key(const char *api_key);
+const char *chat_llm_get_base_url(void);
+void chat_llm_set_base_url(const char *base_url);
+
+/* True if an API key is configured (LLM online). */
+bool chat_llm_is_configured(void);
+
 #ifdef __cplusplus
 }
 #endif

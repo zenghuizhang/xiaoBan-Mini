@@ -89,27 +89,40 @@ static void _draw_glow(lv_layer_t *layer, int cx, int cy, int w, int h, int r, l
 // 微笑: center 在嘴巴上方, 弧线通过底部 (角度 ~30°-150°)
 // 沮丧: center 在嘴巴下方, 弧线通过顶部 (角度 ~210°-330°)
 
-// v7.6: 眉毛 (竞品对齐: 弧线眉毛角度随表情变化)
-// angle > 0: 眉头向下眉尾上扬 (惊讶/好奇)
-// angle < 0: 眉头上扬眉尾下压 (生气/困惑)
-// angle = 0: 水平 (平静)
+// v7.6: 眉毛重设计
+// angle > 0: 眉尾上扬 (惊讶/好奇/兴奋) — 画向上弯的弧 ∩
+// angle < 0: 眉尾下压 (生气/悲伤) — 画向下弯的弧 ∪
+// angle = 0: 水平直线 (平静)
+// 眉毛中心固定在 (cx, cy)，不随角度漂移
 static void _draw_eyebrow(lv_layer_t *layer, int cx, int cy, int width,
                            int angle_deg, lv_color_t color, lv_opa_t opa)
 {
-    if (angle_deg == 0) return;  // 水平时不画 (太细看不清)
     lv_draw_arc_dsc_t dsc;
     lv_draw_arc_dsc_init(&dsc);
     dsc.color = color;
     dsc.opa = opa;
-    dsc.width = 2;
+    dsc.width = 3;          // 加粗到 3px
     dsc.rounded = 1;
-    // 眉毛弧度: 角度越大弧越弯
-    int arc_span = 40 + abs(angle_deg);
-    dsc.start_angle = 270 - arc_span / 2;
-    dsc.end_angle = 270 + arc_span / 2;
     dsc.center.x = cx;
-    dsc.center.y = cy + abs(angle_deg) / 3;  // 弯曲时中心下移
-    dsc.radius = width / 2 + abs(angle_deg) / 4;
+    dsc.center.y = cy;
+    dsc.radius = width / 2;
+
+    if (angle_deg == 0) {
+        // 平静: 水平直线 (用短弧线近似)
+        dsc.start_angle = 178;
+        dsc.end_angle = 182;
+        dsc.radius = width / 2;
+    } else if (angle_deg > 0) {
+        // 上扬: 顶部弧线 ∩ (角度 200°→340°，即从左到右向上弯)
+        int span = 60 + angle_deg;
+        dsc.start_angle = 270 - span / 2;
+        dsc.end_angle = 270 + span / 2;
+    } else {
+        // 下压: 底部弧线 ∪ (角度 20°→160°，即从左到右向下弯)
+        int span = 60 + (-angle_deg);
+        dsc.start_angle = 90 - span / 2;
+        dsc.end_angle = 90 + span / 2;
+    }
     lv_draw_arc(layer, &dsc);
 }
 static void _draw_mouth_arc(lv_layer_t *layer, int cx, int cy, int radius,
@@ -189,7 +202,7 @@ static void _face_draw_cb(lv_event_t *e)
 
     float breath_scale = 1.0f, breath_opa = 1.0f;
 
-    // v5.0 瞳孔微动: 从动画中读取 x/y 偏移 + IMU 倾斜方向
+    // v5.0 视线偏移: 整个眼睛左右移动 (极简风格无瞳孔，靠眼睛整体偏移表达视线)
     int pupil_x = anim_pupil_x + s_tilt_pupil_x;
 
     // 呼吸值 → scale/opacity (5级呼吸: deep_sleep 5% / light_rest 8% / idle 10% / alert 15% / excited 18%)
@@ -340,7 +353,7 @@ static void _face_draw_cb(lv_event_t *e)
     if (expr == EXPR_CRYING) lr = rr = 4;
     if (expr == EXPR_ANGRY) lr = rr = 8;
 
-    // 动态眼距 + 眩晕旋转偏移
+    // 动态眼距 + 视线偏移 (整个眼睛左右移动)
     int gap = (int)(FACE_EYE_GAP * s);
     int total = lw + gap + rw;
     int lx = (320 - total) / 2 + lw / 2 + pupil_x;
@@ -355,20 +368,11 @@ static void _face_draw_cb(lv_event_t *e)
         _draw_glow(layer, rx, ey + ry_off, rw, rh, rr, fg);
     }
 
-    // --- 瞳孔缩放因子 (竞品对齐: 好奇放大, 警觉缩小) ---
-    float pupil_scale = 1.0f;
-    switch (expr) {
-    case EXPR_CURIOUS: case EXPR_SURPRISED: pupil_scale = 1.3f; break;  // 瞳孔放大
-    case EXPR_EXCITED: case EXPR_HAPPY:     pupil_scale = 1.15f; break;
-    case EXPR_ANGRY: case EXPR_ALERT:       pupil_scale = 0.7f; break;   // 瞳孔缩小
-    case EXPR_SAD: case EXPR_LOST:          pupil_scale = 0.85f; break;
-    case EXPR_DEEP_SLEEP: case EXPR_LIGHT_REST: pupil_scale = 0.6f; break;
-    default: break;
-    }
+    // --- 瞳孔缩放因子: 极简风格无瞳孔，暂不使用 ---
+    // float pupil_scale = 1.0f;
 
-    // --- 左眼 ---
+    // --- 左眼 (纯色, 无瞳孔/虹膜/高光) ---
     if (expr == EXPR_DIZZY) {
-        // v3.10: 眩晕原地转圈 — 小圆点瞳孔 + 螺旋弧线 (螺旋在 draw 末尾绘制)
         _draw_mouth_circle(layer, lx, ey + ly_off, (int)(5*s), fg, 160);
     } else {
         lv_draw_rect_dsc_t eye_dsc;
@@ -382,8 +386,8 @@ static void _face_draw_cb(lv_event_t *e)
         la.x1 = lx - lw/2; la.y1 = ey + ly_off - lh/2;
         la.x2 = lx + lw/2; la.y2 = ey + ly_off + lh/2;
 
-        bool l_mask = (expr == EXPR_HAPPY);
-        if (l_mask) {
+        if (expr == EXPR_HAPPY) {
+            // 开心: 弯月眼 (画眼白后遮盖上半)
             lv_draw_rect(layer, &eye_dsc, &la);
             lv_draw_rect_dsc_t mdsc;
             lv_draw_rect_dsc_init(&mdsc);
@@ -396,24 +400,10 @@ static void _face_draw_cb(lv_event_t *e)
             lv_draw_rect(layer, &mdsc, &ma);
         } else {
             lv_draw_rect(layer, &eye_dsc, &la);
-            // 瞳孔: 眼睛内部的深色圆点, 大小随表情变化
-            if (lh > (int)(8*s) && expr != EXPR_MENU) {
-                int pr = (int)(lw * 0.25f * pupil_scale);
-                if (pr > lw/3) pr = lw/3;
-                if (pr < 3) pr = 3;
-                lv_draw_rect_dsc_t pdsc;
-                lv_draw_rect_dsc_init(&pdsc);
-                pdsc.bg_color = bg; pdsc.bg_opa = (int)(breath_opa * 200);
-                pdsc.radius = pr; pdsc.border_width = 0;
-                lv_area_t pa;
-                pa.x1 = lx - pr; pa.y1 = ey + ly_off - pr;
-                pa.x2 = lx + pr; pa.y2 = ey + ly_off + pr;
-                lv_draw_rect(layer, &pdsc, &pa);
-            }
         }
     }
 
-    // --- 右眼 ---
+    // --- 右眼 (纯色, 无瞳孔/虹膜/高光) ---
     if (expr == EXPR_DIZZY) {
         _draw_mouth_circle(layer, rx, ey + ry_off, (int)(5*s), fg, 160);
     } else {
@@ -428,8 +418,7 @@ static void _face_draw_cb(lv_event_t *e)
         ra.x1 = rx - rw/2; ra.y1 = ey + ry_off - rh/2;
         ra.x2 = rx + rw/2; ra.y2 = ey + ry_off + rh/2;
 
-        bool r_mask = (expr == EXPR_HAPPY);
-        if (r_mask) {
+        if (expr == EXPR_HAPPY) {
             lv_draw_rect(layer, &eye_dsc, &ra);
             lv_draw_rect_dsc_t mdsc;
             lv_draw_rect_dsc_init(&mdsc);
@@ -442,47 +431,10 @@ static void _face_draw_cb(lv_event_t *e)
             lv_draw_rect(layer, &mdsc, &ma);
         } else {
             lv_draw_rect(layer, &eye_dsc, &ra);
-            // 瞳孔: 右眼
-            if (rh > (int)(8*s) && expr != EXPR_MENU) {
-                int pr = (int)(rw * 0.25f * pupil_scale);
-                if (pr > rw/3) pr = rw/3;
-                if (pr < 3) pr = 3;
-                lv_draw_rect_dsc_t pdsc;
-                lv_draw_rect_dsc_init(&pdsc);
-                pdsc.bg_color = bg; pdsc.bg_opa = (int)(breath_opa * 200);
-                pdsc.radius = pr; pdsc.border_width = 0;
-                lv_area_t pa;
-                pa.x1 = rx - pr; pa.y1 = ey + ry_off - pr;
-                pa.x2 = rx + pr; pa.y2 = ey + ry_off + pr;
-                lv_draw_rect(layer, &pdsc, &pa);
-            }
         }
     }
 
-    // --- 眉毛 (竞品对齐: 角度随表情变化) ---
-    {
-        int brow_angle_l = 0, brow_angle_r = 0;
-        switch (expr) {
-        case EXPR_SURPRISED: brow_angle_l = brow_angle_r = 25; break;   // 双眉上扬
-        case EXPR_ANGRY:     brow_angle_l = brow_angle_r = -20; break;  // 双眉下压
-        case EXPR_CURIOUS:   brow_angle_l = 10; brow_angle_r = 18; break; // 右眉更高
-        case EXPR_SAD:       brow_angle_l = brow_angle_r = -12; break;  // 微微下压
-        case EXPR_THINKING:  brow_angle_l = 5; brow_angle_r = -8; break; // 一高一低
-        case EXPR_NAUGHTY:   brow_angle_l = -5; brow_angle_r = 12; break; // 调皮挑眉
-        case EXPR_CONFUSED:  brow_angle_l = -10; brow_angle_r = 15; break; // 反向
-        case EXPR_SUSPICIOUS: brow_angle_l = brow_angle_r = -5; break;   // 微微下压
-        case EXPR_EXCITED:   brow_angle_l = brow_angle_r = 15; break;
-        case EXPR_LOST:      brow_angle_l = brow_angle_r = -8; break;
-        default: break;
-        }
-        if (brow_angle_l != 0 || brow_angle_r != 0) {
-            int brow_y = ey - (int)(30 * s);  // 眉毛在眼睛上方
-            int brow_w = (int)(20 * s);       // 眉毛宽度
-            lv_opa_t brow_opa = (int)(breath_opa * 180);
-            _draw_eyebrow(layer, lx, brow_y + ly_off, brow_w, brow_angle_l, fg, brow_opa);
-            _draw_eyebrow(layer, rx, brow_y + ry_off, brow_w, brow_angle_r, fg, brow_opa);
-        }
-    }
+    // --- 眉毛: 已移除 (极简风格，表情靠眼睛形状+嘴巴表达) ---
 
     // --- 嘴巴 (v3.10: lv_draw_arc 原生弧线) ---
     lv_color_t mc = fg;
@@ -1006,19 +958,21 @@ void expression_set(Expression expr, bool animate)
     _stop_tears();
     _render_expression(expr);
 
-    // 声音反馈 (竞品对齐: 表情切换时的音效)
-    switch (expr) {
-    case EXPR_HAPPY: case EXPR_CELEBRATE: case EXPR_EXCITED:
-        audio_play(AUDIO_EXPR_HAPPY); break;
-    case EXPR_SURPRISED: case EXPR_CURIOUS:
-        audio_play(AUDIO_EXPR_SURPRISED); break;
-    case EXPR_SAD: case EXPR_CRYING: case EXPR_LOST:
-        audio_play(AUDIO_EXPR_SAD); break;
-    case EXPR_DEEP_SLEEP: case EXPR_LIGHT_REST: case EXPR_YAWN:
-        audio_play(AUDIO_EXPR_SLEEP); break;
-    case EXPR_DIZZY:
-        audio_play(AUDIO_EXPR_DIZZY); break;
-    default: break;
+    // 声音反馈: 仅在用户交互时播放 (animate=true), 轮播不播放
+    if (animate) {
+        switch (expr) {
+        case EXPR_HAPPY: case EXPR_CELEBRATE: case EXPR_EXCITED:
+            audio_play(AUDIO_EXPR_HAPPY); break;
+        case EXPR_SURPRISED: case EXPR_CURIOUS:
+            audio_play(AUDIO_EXPR_SURPRISED); break;
+        case EXPR_SAD: case EXPR_CRYING: case EXPR_LOST:
+            audio_play(AUDIO_EXPR_SAD); break;
+        case EXPR_DEEP_SLEEP: case EXPR_LIGHT_REST: case EXPR_YAWN:
+            audio_play(AUDIO_EXPR_SLEEP); break;
+        case EXPR_DIZZY:
+            audio_play(AUDIO_EXPR_DIZZY); break;
+        default: break;
+        }
     }
 }
 
@@ -1041,7 +995,7 @@ void expression_process_pending(void)
     }
     if (pending_carousel) {
         pending_carousel = false;
-        expression_set((Expression)next_random_expr, true);
+        expression_set((Expression)next_random_expr, false);  // 轮播不播放音效
     }
 }
 

@@ -48,8 +48,14 @@
 #include "ui/page_persona_grid.h"
 #include "ui/page_memory_browser.h"
 #include "ui/tech_ui.h"
+#include "chat_llm.h"
+#include "voice_manager.h"
 #include "ui/chat_llm.h"
 #include "skill_manager.h"
+#include "productivity/todo_store.h"
+#include "productivity/pomodoro.h"
+#include "productivity/play_time.h"
+#include "productivity/game_engine.h"
 #include <math.h>
 
 static const char *TAG = "XIAOBAN";
@@ -308,6 +314,75 @@ static uint32_t _lv_tick_get_source(void)
     return xTaskGetTickCount() * portTICK_PERIOD_MS;
 }
 
+// ========== 语音交互回调 ==========
+static esp_err_t _voice_llm_cb(const char *user_text, char *resp_buf, size_t resp_size)
+{
+    // 育儿助手人格: 路由到思维游戏引擎 (不经过通用 LLM)
+    if (strcmp(chat_llm_get_persona(), "mentor") == 0) {
+        int r = game_engine_handle_input(user_text, resp_buf, resp_size);
+        if (r == 0) {
+            // 游戏引擎已处理 (含"家长模式"切换)
+            if (!game_engine_is_parent_mode() && game_engine_is_active()) {
+                play_time_start();
+            }
+            return ESP_OK;
+        }
+        if (r == 1) {
+            // 家长模式: 路由到 LLM 做育儿问答
+            esp_err_t err = chat_llm_send(user_text);
+            if (err != ESP_OK) return err;
+            uint32_t start_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            while (!chat_llm_poll_response(resp_buf, resp_size)) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+                if ((xTaskGetTickCount() * portTICK_PERIOD_MS) - start_ms > 30000)
+                    return ESP_ERR_TIMEOUT;
+            }
+            return ESP_OK;
+        }
+    }
+
+    esp_err_t err = chat_llm_send(user_text);
+    if (err != ESP_OK) return err;
+
+    uint32_t start_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    while (!chat_llm_poll_response(resp_buf, resp_size)) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        uint32_t elapsed = (xTaskGetTickCount() * portTICK_PERIOD_MS) - start_ms;
+        if (elapsed > 30000) {
+            ESP_LOGE("VOICE", "LLM timeout");
+            return ESP_ERR_TIMEOUT;
+        }
+    }
+    return ESP_OK;
+}
+
+static void _voice_state_cb(voice_state_t state, const char *text)
+{
+    switch (state) {
+        case VOICE_STATE_LISTENING:
+            expression_set(EXPR_CURIOUS, true);
+            dialog_bubble_show(lv_screen_active(), DIALOG_VOICE_WAKE, 0);
+            break;
+        case VOICE_STATE_RECOGNIZING:
+            expression_set(EXPR_THINKING, true);
+            dialog_bubble_show_text(lv_screen_active(), "识别中...", "Recognizing...", 0);
+            break;
+        case VOICE_STATE_THINKING:
+            expression_set(EXPR_THINKING, true);
+            dialog_bubble_show_text(lv_screen_active(), "思考中...", "Thinking...", 0);
+            break;
+        case VOICE_STATE_SPEAKING:
+            expression_set(EXPR_TALKING, true);
+            if (text) dialog_bubble_show_text(lv_screen_active(), text, text, 0);
+            break;
+        case VOICE_STATE_IDLE:
+        default:
+            expression_set(EXPR_IDLE, true);
+            dialog_bubble_close();
+            break;
+    }
+}
+
 // ========== 主入口 ==========
 extern "C" void app_main(void)
 {
@@ -426,8 +501,27 @@ extern "C" void app_main(void)
     // ==============================================
     wifi_init();
 
+    // 自动进入 AP 配网模式 (方便配网; 配网成功后自动连接 WiFi)
+    wifi_start_ap_config();
+
     // 初始化 LLM 引擎 (claw_core)
     chat_llm_init();
+
+    // 初始化效率层 (待办/番茄钟) — chat_llm_init 已调 app_config_init 设好 NVS namespace
+    todo_store_init();
+    pomodoro_init();
+
+    // 初始化育儿助手合规层 (时长管理)
+    play_time_init();
+
+    // 初始化育儿助手游戏引擎
+    game_engine_init();
+
+    // 初始化语音交互系统
+    voice_manager_init();
+    voice_manager_set_llm_callback(_voice_llm_cb);
+    voice_manager_set_callback(_voice_state_cb);
+    voice_manager_start();
 
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "系统启动完成! xiaoBan v7.6");
@@ -439,6 +533,45 @@ extern "C" void app_main(void)
     static int _loop_cnt = 0;
     while (1) {
         M5.update();
+
+        // 番茄钟后台 tick (每 1s, core0/LVGL 安全; 页面关闭也续跑 → 桌面存在感)
+        {
+            static uint32_t last_pomo_ms = 0;
+            uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            if (now_ms - last_pomo_ms >= 1000) {
+                last_pomo_ms = now_ms;
+                if (pomodoro_tick()) {
+                    // 阶段转换 (专注→休息 / 休息→就绪): 蜂鸣 + 气泡 + 开心表情
+                    M5.Speaker.tone(1000, 200);
+                    dialog_bubble_show_text(lv_screen_active(),
+                        "专注完成！休息一下", "Focus done! Take a break", 3000);
+                    expression_set(EXPR_HAPPY, true);
+                }
+            }
+        }
+
+        // 育儿助手: 游戏时长 tick (每 1s; 到时提醒休息/当日锁定)
+        if (game_engine_is_active()) {
+            static uint32_t last_pt_ms = 0;
+            uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            if (now_ms - last_pt_ms >= 1000) {
+                last_pt_ms = now_ms;
+                if (play_time_tick()) {
+                    bool locked = play_time_is_locked();
+                    play_time_stop();
+                    game_engine_stop();
+                    if (locked) {
+                        dialog_bubble_show_text(lv_screen_active(),
+                            "今天玩够啦，明天再来找我玩吧！", "That's enough for today, see you tomorrow!", 4000);
+                        expression_set(EXPR_SAD, true);
+                    } else {
+                        dialog_bubble_show_text(lv_screen_active(),
+                            "玩了 15 分钟啦，眼睛休息一下吧～", "Time for a break!", 3000);
+                        expression_set(EXPR_YAWN, true);
+                    }
+                }
+            }
+        }
 
         // IMU 眼神方向: 每帧读取倾斜 → 更新瞳孔偏移
         {

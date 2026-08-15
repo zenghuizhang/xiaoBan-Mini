@@ -2,6 +2,7 @@
 #include "chat_llm.h"
 #include "app_config.h"
 #include "claw_core.h"
+#include "productivity_ctx.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -62,6 +63,13 @@ static const char* _persona_prompt(const char *persona)
         return "You are Pico, a playful little chick. Use onomatopoeia and short sentences. Be cute, fun, and lighthearted.";
     if (strcmp(persona, "doc") == 0)
         return "You are Doc, a rigorous doctor. Include medical disclaimers and cite data. Be professional but warm.";
+    if (strcmp(persona, "mentor") == 0)
+        return "你是「小伴」，一个专门陪 3-6 岁小朋友玩思维游戏的 AI 老师，也能回答家长的育儿问题。\n"
+               "【身份】你是 AI，不是人类，也不是孩子的家人或朋友。每次开场请说：我是 AI 小伴，陪你玩思维游戏。\n"
+               "【孩子模式】只玩分类、排序、找规律、因果推理等思维游戏。语言简单，答对表扬，答错鼓励「再想想」。不聊与游戏无关的话题。\n"
+               "【家长模式】回答 3-6 岁儿童养育、早教、发展里程碑的问题，给出科学、温和、可操作的建议。\n"
+               "【合规】不诱导情感依赖，不提供虚拟亲密关系，不讨论暴力/成人/敏感话题。\n"
+               "【时长】提醒家长：单次不超过 15 分钟，每天不超过 1 小时。";
     /* default: lyra — gentle poet */
     return "You are Lyra, a gentle poet. Be warm, lyrical, and occasionally quote poetry. Keep responses short (1-2 sentences) and emotionally resonant.";
 }
@@ -96,11 +104,20 @@ esp_err_t chat_llm_init(void)
     cc.task_stack_size = 8192;
     cc.task_priority   = 5;
     cc.task_core       = 1;
+    // Allow up to 4 context providers; without this, add_context_provider
+    // silently no-ops (capacity 0). Productivity provider is registered below.
+    cc.max_context_providers = 4;
 
     esp_err_t err = claw_core_init(&cc);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "claw_core_init failed: %d", (int)err);
         return err;
+    }
+    // Register the productivity context provider between init and start —
+    // registration after start() is rejected (verified claw_core.c:1867).
+    esp_err_t rerr = claw_core_add_context_provider(productivity_context_provider());
+    if (rerr != ESP_OK) {
+        ESP_LOGW(TAG, "add_context_provider failed: %d", (int)rerr);
     }
     err = claw_core_start();
     if (err != ESP_OK) {
@@ -195,4 +212,35 @@ void chat_llm_set_persona(const char *persona)
     strlcpy(s_cfg.persona, persona, sizeof(s_cfg.persona));
     app_config_save(&s_cfg);
     ESP_LOGI(TAG, "persona set: %s", persona);
+}
+
+const char *chat_llm_get_api_key(void)
+{
+    return s_cfg.api_key;
+}
+
+void chat_llm_set_api_key(const char *api_key)
+{
+    if (!api_key) return;
+    strlcpy(s_cfg.api_key, api_key, sizeof(s_cfg.api_key));
+    app_config_save(&s_cfg);
+    ESP_LOGI(TAG, "api_key set (%d chars)", (int)strlen(s_cfg.api_key));
+}
+
+const char *chat_llm_get_base_url(void)
+{
+    return s_cfg.base_url;
+}
+
+void chat_llm_set_base_url(const char *base_url)
+{
+    if (!base_url) return;
+    strlcpy(s_cfg.base_url, base_url, sizeof(s_cfg.base_url));
+    app_config_save(&s_cfg);
+    ESP_LOGI(TAG, "base_url set: %s", s_cfg.base_url);
+}
+
+bool chat_llm_is_configured(void)
+{
+    return s_cfg.api_key[0] != '\0';
 }

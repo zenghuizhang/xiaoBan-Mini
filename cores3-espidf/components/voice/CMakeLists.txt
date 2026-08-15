@@ -1,0 +1,15 @@
+idf_component_register(
+    SRCS
+        "src/voice_manager.cpp"
+        "src/wake_word.cpp"
+        "src/asr.cpp"
+        "src/tts.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        esp-sr
+        m5unified
+        esp_http_client
+        cjson
+        app_config
+)

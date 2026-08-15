@@ -4,4 +4,5 @@ dependencies:
   espressif/mcp-c-sdk: "^2.0.1"
   espressif/cjson: "^1.7"
   espressif/mdns: "^1.10.1"
+  espressif/esp-sr: "^2.4.7"
   idf: ">=5.1.0"

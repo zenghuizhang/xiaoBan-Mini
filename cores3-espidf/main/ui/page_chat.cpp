@@ -4,6 +4,7 @@
 #include "theme_v3.h"
 #include "expressions.h"
 #include "chat_llm.h"
+#include "voice_manager.h"
 #include "font_zh_14.h"
 #include <string.h>
 #include <stdlib.h>
@@ -133,6 +134,13 @@ static void _on_test_send(lv_event_t* e)
     }
 }
 
+/* Voice input button: trigger voice manager to start listening */
+static void _on_voice_send(lv_event_t* e)
+{
+    (void)e;
+    voice_manager_trigger_listen();
+}
+
 // ── public API ─────────────────────────────────────────────────────────────
 
 lv_obj_t* page_chat_create(lv_obj_t* parent)
@@ -224,6 +232,23 @@ lv_obj_t* page_chat_create(lv_obj_t* parent)
     lv_label_set_text(arrow, ">");
     lv_obj_set_style_text_color(arrow, bg, 0);
     lv_obj_center(arrow);
+
+    // Voice input button (mic icon) — left of send button
+    lv_obj_t* vbtn = lv_obj_create(p);
+    lv_obj_set_size(vbtn, 32, 32);
+    lv_obj_set_style_radius(vbtn, 16, 0);
+    lv_obj_set_style_bg_color(vbtn, fg, 0);
+    lv_obj_set_style_bg_opa(vbtn, LV_OPA_10, 0);
+    lv_obj_set_style_border_color(vbtn, fg, 0);
+    lv_obj_set_style_border_width(vbtn, 1, 0);
+    lv_obj_set_style_border_opa(vbtn, LV_OPA_30, 0);
+    lv_obj_align(vbtn, LV_ALIGN_BOTTOM_RIGHT, -42, -4);
+    lv_obj_add_flag(vbtn, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(vbtn, _on_voice_send, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* mic = lv_label_create(vbtn);
+    lv_label_set_text(mic, LV_SYMBOL_AUDIO);
+    lv_obj_set_style_text_color(mic, fg, 0);
+    lv_obj_center(mic);
 
     // Poll timer: check for LLM response every 200ms
     ctx->poll_timer = lv_timer_create(_poll_response_cb, 200, NULL);
